@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.3.1 (2025-12-04)
+
+### Features
+
+- Added prefix-only notation support (`§PREFIX`) to fetch all sections from a document
+  - `§FE` expands to all `§FE.*` sections
+  - `§APP-HOOK` expands to all `§APP-HOOK.*` sections
+  - Works with `fetch`, `resolve_references`, and `validate_references` tools
+
+### Testing
+
+- Added 22 new tests for prefix-only notation
+- Total test count: 262 tests
+
+---
+
 ## v0.3.0 (2025-11-10)
 
 ### Documentation

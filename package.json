@@ -1,6 +1,6 @@
 {
   "name": "@rcrsr/mcp-policy-server",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "MCP server providing token-efficient access to policy documentation via § notation",
   "main": "dist/index.js",
   "bin": {
