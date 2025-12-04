@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.3.2 (2025-12-04)
+
+### Security
+
+- Updated @modelcontextprotocol/sdk from 1.20.2 to 1.24.3 (fixes DNS rebinding vulnerability)
+- Updated transitive dependencies to fix 5 additional vulnerabilities:
+  - body-parser 2.2.0 → 2.2.1 (DoS via url encoding)
+  - glob 10.4.5 → 10.5.0, 11.0.3 → 11.1.0 (command injection in CLI)
+  - js-yaml 3.14.1 → 3.14.2, 4.1.0 → 4.1.1 (prototype pollution)
+
+---
+
 ## v0.3.1 (2025-12-04)
 
 ### Features
