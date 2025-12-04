@@ -14,6 +14,13 @@ const SHORT_RANGE_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.(\d+)\.(\d+)-(\d+)$/;
 const WHOLE_SECTION_RANGE_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.(\d+)-(\d+)$/;
 const SECTION_MARKER_PATTERN = /\{§/;
 
+/**
+ * Pattern for prefix-only notation (§PREFIX without section number)
+ * Matches: §APP, §META, §SYS, §APP-HOOK, etc.
+ * Used to fetch all sections from a document
+ */
+export const PREFIX_ONLY_PATTERN = /^§([A-Z]+(?:-[A-Z]+)*)$/;
+
 // Sections are sorted alphabetically by prefix, then numerically by section number
 
 /**

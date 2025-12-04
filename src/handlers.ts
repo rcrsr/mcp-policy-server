@@ -4,12 +4,12 @@
  */
 
 import * as fs from 'fs';
-import { expandRange, findEmbeddedReferences } from './parser.js';
+import { expandRange, findEmbeddedReferences, PREFIX_ONLY_PATTERN } from './parser.js';
 import { fetchSectionsWithIndex, resolveSectionLocationsWithIndex } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { ServerConfig } from './config.js';
 import { ensureFreshIndex } from './indexer.js';
-import { IndexState } from './types.js';
+import { IndexState, SectionIndex } from './types.js';
 
 /**
  * Validate that array parameter is non-empty
@@ -90,6 +90,46 @@ function isValidateReferencesArgs(args: unknown): args is ValidateReferencesArgs
     'references' in args &&
     Array.isArray((args as ValidateReferencesArgs).references)
   );
+}
+
+/**
+ * Expand section notations including prefix-only shorthand
+ *
+ * Handles three notation types:
+ * - Prefix-only (§APP): Expands to all sections with that prefix from index
+ * - Range (§APP.4.1-3): Expands via expandRange()
+ * - Single section (§APP.7): Returns as-is via expandRange()
+ *
+ * @param sections - Array of section notations to expand
+ * @param index - Section index for prefix-only lookups
+ * @returns Expanded array of section notations
+ *
+ * @example
+ * ```typescript
+ * // Prefix-only expands to all matching sections
+ * expandSectionsWithIndex(['§FE'], index)
+ * // Returns: ['§FE.1', '§FE.2', '§FE.2.1', '§FE.3']
+ *
+ * // Mixed notation types
+ * expandSectionsWithIndex(['§APP', '§META.2-3'], index)
+ * // Returns: ['§APP.1', '§APP.2', '§META.2', '§META.3']
+ * ```
+ */
+export function expandSectionsWithIndex(sections: string[], index: SectionIndex): string[] {
+  return sections.flatMap((s) => {
+    const prefixMatch = s.match(PREFIX_ONLY_PATTERN);
+    if (prefixMatch) {
+      const prefix = prefixMatch[1];
+      const matchingSections = Array.from(index.sectionMap.keys()).filter((section) =>
+        section.startsWith(`§${prefix}.`)
+      );
+      if (matchingSections.length === 0) {
+        throw new Error(`No sections found for prefix: ${prefix}`);
+      }
+      return matchingSections;
+    }
+    return expandRange(s);
+  });
 }
 
 /**
@@ -269,8 +309,8 @@ export function handleFetch(
   // Ensure index is fresh (lazy rebuild if files changed)
   const index = ensureFreshIndex(indexState, config);
 
-  // Expand any ranges
-  const expandedSections: string[] = sections.flatMap((s: string) => expandRange(s));
+  // Expand prefix-only notation and ranges
+  const expandedSections = expandSectionsWithIndex(sections, index);
 
   try {
     const fullContent = fetchSectionsWithIndex(expandedSections, index, config.baseDir);
@@ -369,8 +409,8 @@ export function handleResolveReferences(
   // Ensure index is fresh (lazy rebuild if files changed)
   const index = ensureFreshIndex(indexState, config);
 
-  // Expand any ranges
-  const expandedSections: string[] = sections.flatMap((s: string) => expandRange(s));
+  // Expand prefix-only notation and ranges
+  const expandedSections = expandSectionsWithIndex(sections, index);
 
   try {
     const locations = resolveSectionLocationsWithIndex(expandedSections, index, config.baseDir);
@@ -503,7 +543,7 @@ export function handleValidateReferences(
     }
 
     // Check each reference exists
-    const expandedRefs: string[] = references.flatMap((ref: string) => expandRange(ref));
+    const expandedRefs = expandSectionsWithIndex(references, index);
     for (const ref of expandedRefs) {
       // Check if section is in duplicates map (error case)
       if (index.duplicates.has(ref)) {

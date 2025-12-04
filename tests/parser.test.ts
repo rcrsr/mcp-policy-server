@@ -12,6 +12,7 @@ import {
   findEmbeddedReferences,
   isParentSection,
   sortSections,
+  PREFIX_ONLY_PATTERN,
 } from '../src/parser';
 import { SectionNotation } from '../src/types';
 
@@ -719,6 +720,61 @@ Text after with §META.2
         '§SYS-TPL.1',
         '§USER.5',
       ]);
+    });
+  });
+
+  describe('PREFIX_ONLY_PATTERN', () => {
+    it('should match simple prefix-only notation', () => {
+      expect('§APP'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+      expect('§META'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+      expect('§SYS'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+      expect('§USER'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+    });
+
+    it('should match hyphenated prefix-only notation', () => {
+      expect('§APP-HOOK'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+      expect('§SYS-TPL'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+      expect('§APP-PLG-EXT'.match(PREFIX_ONLY_PATTERN)).toBeTruthy();
+    });
+
+    it('should capture the prefix without § symbol', () => {
+      const match = '§APP'.match(PREFIX_ONLY_PATTERN);
+      expect(match).toBeTruthy();
+      expect(match![1]).toBe('APP');
+
+      const hyphenMatch = '§APP-HOOK'.match(PREFIX_ONLY_PATTERN);
+      expect(hyphenMatch).toBeTruthy();
+      expect(hyphenMatch![1]).toBe('APP-HOOK');
+    });
+
+    it('should not match section notation with numbers', () => {
+      expect('§APP.7'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('§META.2.3'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('§SYS.1.2.3.4'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+
+    it('should not match range notation', () => {
+      expect('§APP.4.1-3'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('§META.2-4'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+
+    it('should not match without § symbol', () => {
+      expect('APP'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('META'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+
+    it('should not match lowercase prefixes', () => {
+      expect('§app'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('§meta'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+
+    it('should not match empty prefix', () => {
+      expect('§'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+
+    it('should not match with trailing characters', () => {
+      expect('§APP.'.match(PREFIX_ONLY_PATTERN)).toBeNull();
+      expect('§APP '.match(PREFIX_ONLY_PATTERN)).toBeNull();
     });
   });
 });

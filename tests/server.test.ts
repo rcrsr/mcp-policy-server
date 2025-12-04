@@ -13,6 +13,7 @@ import {
   handleListSources,
   estimateTokens,
   chunkContent,
+  expandSectionsWithIndex,
 } from '../src/handlers';
 import { ServerConfig } from '../src/config';
 import { initializeIndexState, closeIndexState } from '../src/indexer';
@@ -156,6 +157,42 @@ describe('MCP Server Integration', () => {
         expect(() => {
           handleFetch({ sections: ['§TEST.999'] }, TEST_CONFIG, indexState);
         }).toThrow();
+      });
+
+      describe('prefix-only notation', () => {
+        test('fetches all sections for a prefix', () => {
+          const response = handleFetch({ sections: ['§META'] }, TEST_CONFIG, indexState);
+
+          const text = response.content[0].text;
+          expect(text).toContain('§META.1');
+          expect(text).toContain('§META.2');
+        });
+
+        test('fetches all sections with hyphenated prefix', () => {
+          const response = handleFetch({ sections: ['§APP-HOOK'] }, TEST_CONFIG, indexState);
+
+          const text = response.content[0].text;
+          expect(text).toContain('§APP-HOOK.1');
+          expect(text).toContain('§APP-HOOK.2');
+        });
+
+        test('works with mixed prefix-only and specific sections', () => {
+          const response = handleFetch(
+            { sections: ['§META', '§TEST.1'] },
+            TEST_CONFIG,
+            indexState
+          );
+
+          const text = response.content[0].text;
+          expect(text).toContain('§META.1');
+          expect(text).toContain('§TEST.1');
+        });
+
+        test('throws error for unknown prefix', () => {
+          expect(() => {
+            handleFetch({ sections: ['§UNKNOWN'] }, TEST_CONFIG, indexState);
+          }).toThrow('No sections found for prefix: UNKNOWN');
+        });
       });
 
       describe('chunking', () => {
@@ -331,6 +368,19 @@ describe('MCP Server Integration', () => {
           handleResolveReferences({ sections: '§TEST.1' }, TEST_CONFIG, indexState);
         }).toThrow('Invalid arguments: expected { sections: string[]');
       });
+
+      test('resolves prefix-only notation to all matching sections', () => {
+        const response = handleResolveReferences(
+          { sections: ['§META'] },
+          TEST_CONFIG,
+          indexState
+        );
+
+        const result = JSON.parse(response.content[0].text);
+        expect(result['policy-meta.md']).toBeDefined();
+        expect(result['policy-meta.md']).toContain('§META.1');
+        expect(result['policy-meta.md']).toContain('§META.2');
+      });
     });
 
     describe('handleExtractReferences', () => {
@@ -469,6 +519,19 @@ describe('MCP Server Integration', () => {
           handleValidateReferences({ references: '§TEST.1' }, TEST_CONFIG, indexState);
         }).toThrow('Invalid arguments: expected { references: string[]');
       });
+
+      test('validates prefix-only notation by expanding to all sections', () => {
+        const response = handleValidateReferences(
+          { references: ['§META'] },
+          TEST_CONFIG,
+          indexState
+        );
+
+        const result = JSON.parse(response.content[0].text);
+        expect(result.valid).toBe(true);
+        // Note: checked count is the original reference count, not expanded
+        expect(result.checked).toBe(1);
+      });
     });
 
     describe('handleListSources', () => {
@@ -524,6 +587,64 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Helper Functions', () => {
+    describe('expandSectionsWithIndex', () => {
+      test('expands prefix-only notation to all matching sections', () => {
+        const expanded = expandSectionsWithIndex(['§TEST'], indexState.index);
+
+        expect(expanded.length).toBeGreaterThan(0);
+        expect(expanded.every((s) => s.startsWith('§TEST.'))).toBe(true);
+      });
+
+      test('returns all sections for a prefix', () => {
+        const expanded = expandSectionsWithIndex(['§META'], indexState.index);
+
+        expect(expanded).toContain('§META.1');
+        expect(expanded).toContain('§META.2');
+      });
+
+      test('passes through regular section notation unchanged', () => {
+        const expanded = expandSectionsWithIndex(['§TEST.1'], indexState.index);
+
+        expect(expanded).toEqual(['§TEST.1']);
+      });
+
+      test('expands range notation via expandRange', () => {
+        const expanded = expandSectionsWithIndex(['§APP.4.1-3'], indexState.index);
+
+        expect(expanded).toContain('§APP.4.1');
+        expect(expanded).toContain('§APP.4.2');
+        expect(expanded).toContain('§APP.4.3');
+      });
+
+      test('handles mixed notation types', () => {
+        const expanded = expandSectionsWithIndex(
+          ['§META', '§TEST.1', '§APP.4.1-2'],
+          indexState.index
+        );
+
+        // Should have META sections
+        expect(expanded.some((s) => s.startsWith('§META.'))).toBe(true);
+        // Should have TEST.1
+        expect(expanded).toContain('§TEST.1');
+        // Should have expanded range
+        expect(expanded).toContain('§APP.4.1');
+        expect(expanded).toContain('§APP.4.2');
+      });
+
+      test('throws error for unknown prefix', () => {
+        expect(() => {
+          expandSectionsWithIndex(['§NONEXISTENT'], indexState.index);
+        }).toThrow('No sections found for prefix: NONEXISTENT');
+      });
+
+      test('handles hyphenated prefix-only notation', () => {
+        const expanded = expandSectionsWithIndex(['§APP-HOOK'], indexState.index);
+
+        expect(expanded.length).toBeGreaterThan(0);
+        expect(expanded.every((s) => s.startsWith('§APP-HOOK.'))).toBe(true);
+      });
+    });
+
     describe('estimateTokens', () => {
       test('estimates tokens for short text', () => {
         const text = 'Hello world';
