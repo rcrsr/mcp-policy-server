@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.4.1 (2025-12-15)
+
+### Bug Fixes
+
+- Fixed `policy-fetch` CLI not executing when invoked via `npx -p @rcrsr/mcp-policy-server policy-fetch`
+  - The `isDirectRun` check now recognizes the `policy-fetch` symlink created by npm
+
+---
+
 ## v0.4.0 (2025-12-15)
 
 ### Highlights
