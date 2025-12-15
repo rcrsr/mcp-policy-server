@@ -57,8 +57,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             sections: {
               type: 'array',
               items: { type: 'string' },
-              description:
-                'Section notations with § prefix (e.g., ["§PREFIX.1", "§PREFIX.2.3"])',
+              description: 'Section notations with § prefix (e.g., ["§PREFIX.1", "§PREFIX.2.3"])',
             },
             continuation: {
               type: 'string',
@@ -79,8 +78,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             sections: {
               type: 'array',
               items: { type: 'string' },
-              description:
-                'Section notations with § prefix (e.g., ["§PREFIX.1", "§PREFIX.2.3"])',
+              description: 'Section notations with § prefix (e.g., ["§PREFIX.1", "§PREFIX.2.3"])',
             },
           },
           required: ['sections'],

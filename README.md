@@ -4,65 +4,43 @@
 
 Stop copying entire policy documents into prompts. Reference specific sections with compact § notation and let subagents fetch exactly what they need, when they need it.
 
-**Designed for Claude Code subagents and commands (slash commands).** May work with other MCP-compatible clients that support agent-based workflows.
-
 ## Why Use This?
 
 ### The Problem
 
 Teams document standards in markdown files (coding guidelines, architecture principles, deployment procedures). When you want Claude Code subagents to follow these standards, you're stuck with imperfect options:
 
-- **Put everything in memory like CLAUDE.md**: Signal loss, high token costs due to implicit context that may not be needed for all tasks
+- **Put everything in memory like CLAUDE.md or rules files**: Signal loss, high token costs due to implicit context that may not be needed for all tasks
 - **Reference entire documents**: Wastes tokens, hits context limits
 - **Maintain each subagent separately**: Unnecessary duplication, hard to keep consistent
 
 ### The Solution
 
-Reference sections with notation like `§PREFIX.1` or `§PREFIX.2.3-5`. Subagents fetch referenced sections on demand. Your standards stay in markdown files. Subagents always get current content without token waste.
+Reference sections with notation like `§PREFIX.1` or `§PREFIX.2.3-5`. Policies are fetched on demand. Your standards stay in markdown files. Subagents always get current content without token waste.
 
 ### Key Benefits
 
 - **No wasted context**: Fetch only needed sections, not entire documents
-- **Always current**: Update files, changes appear automatically (no restart needed for file edits; new files matching existing patterns require restart)
-- **Automatic resolution**: Reference one section, server fetches it plus any sections it references
+- **Always current**: Update files, changes appear automatically
+- **Automatic resolution**: Reference one section, get it plus any sections it references
 - **Fast lookups**: O(1) retrieval via section indexing
 - **Per-project policies**: Same installation, different policy sets per project
 
-## Quick Example
+## Three Integration Methods
 
-**Subagent file (`.claude/agents/code-reviewer.md`):**
-```markdown
----
-name: code-reviewer
-description: Reviews code changes for compliance with policy standards
-tools: mcp__policy-server__fetch_policies, Read, Glob
----
+| Method | Best For | How It Works |
+|--------|----------|--------------|
+| **[Hook](#method-1-claude-code-hook-recommended)** | Claude Code subagents | Policies injected automatically via PreToolUse hook |
+| **[MCP Server](#method-2-mcp-server)** | Other MCP clients, dynamic policy selection | Subagents call `fetch_policies` tool explicitly |
+| **[CLI](#method-3-cli)** | Scripts, CI/CD, non-MCP tools | Command-line policy extraction |
 
-You are a code reviewer following our team standards.
+Choose **Hook** for Claude Code projects. Choose **MCP Server** when subagents need to dynamically select policies based on prompt criteria, or when using other MCP-compatible clients. Choose **CLI** for automation scripts or non-MCP integrations.
 
-**Before reviewing code:** call `mcp__policy-server__fetch_policies` with `{"sections": ["§EXAMPLE.1", "§EXAMPLE.2"]}`
+## Quick Start: Create a Policy File
 
-This retrieves the specified policy sections from your configured files.
-```
+All methods require policy files with § notation. Create a policies directory and sample file:
 
-**Policy file (`policies/policy-example.md`):**
-```markdown
-## {§EXAMPLE.1} Sample Policy Section
-
-Policy content goes here with your team's standards and guidelines.
-
-See also §EXAMPLE.2 for related information.
-```
-
-**What happens:**
-Subagent calls `mcp__policy-server__fetch_policies` with those sections. Server returns requested sections plus embedded references (`§EXAMPLE.2`). See [Getting Started](docs/GETTING_STARTED.md#step-6-use-the-agent) for detailed workflow.
-
-## Installation
-
-### Quick Start (Claude Code)
-
-Create a policies directory in your project root (`./policies`), and add a sample policy file (`./policies/example-policy.md`):
-
+**`./policies/policy-example.md`:**
 ```markdown
 ## {§DESIGN.1} YAGNI (You Aren't Gonna Need It)
 
@@ -73,18 +51,96 @@ Build what you need now. Add features when needed, not in anticipation.
 - No placeholder code for "future features"
 - No abstraction without 3+ concrete use cases
 - Delete unused code immediately
+
+## {§DESIGN.2} Keep It Simple
+
+See also §DESIGN.1 for related principles.
 ```
 
-### Install the MCP Policy Server
+---
 
-The following commands add the MCP Policy Server to your project in Claude Code and configure it to load policies from the `./policies` directory.
+## Method 1: Claude Code Hook (Recommended)
+
+Policies are injected automatically into subagent prompts via PreToolUse hooks. No MCP connection required.
+
+### Step 1: Configure the Hook
+
+Add to your project's `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+      }]
+    }]
+  }
+}
+```
+
+Make sure to restart Claude Code after updating settings.
+
+### Step 2: Create a Subagent with Policy References
+
+The actual format does not matter as long as the policy references are not code-fenced. For example:
+
+**`.claude/agents/code-reviewer.md`:**
+```markdown
+---
+name: code-reviewer
+description: Reviews code for compliance with standards
+---
+
+Required policies: §DESIGN.1, §DESIGN.2
+
+You are a code reviewer following our team standards.
+Apply the policies above when reviewing code.
+```
+
+### Step 3: Run the Subagent
+
+```
+> @code-reviewer review this PR
+```
+
+**What happens:**
+1. Hook detects Task tool call with agent file
+2. `policy-fetch` extracts all § references from agent file (§DESIGN.1, §DESIGN.2)
+3. Policies are injected into the agent prompt wrapped in `<policies>` tags
+4. Subagent receives policies automatically—no explicit tool call needed
+
+**Note:** References inside code fences are ignored, allowing you to document examples without triggering extraction.
+
+### Prefix-Only References
+
+Use prefix-only notation to fetch all sections with a given prefix:
+
+```markdown
+Required: §DESIGN, §API
+```
+
+This expands `§DESIGN` to all `§DESIGN.*` sections and `§API` to all `§API.*` sections.
+
+---
+
+## Method 2: MCP Server
+
+Subagents call `fetch_policies` tool explicitly. Use this when:
+- Subagents need to dynamically select policies based on prompt content
+- You're using MCP-compatible clients other than Claude Code
+- You need validation tools (`validate_references`, `extract_references`)
+
+### Step 1: Install the MCP Server
 
 **Linux/macOS:**
 ```bash
 claude mcp add-json policy-server '{
-  "type": "stdio", 
-  "command": "npx", 
-  "args": ["-y", "@rcrsr/mcp-policy-server"], 
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@rcrsr/mcp-policy-server"],
   "env": {"MCP_POLICY_CONFIG": "./policies/*.md"}}' \
   --scope project
 ```
@@ -98,65 +154,70 @@ claude mcp add-json policy-server ('{' `
   --scope project
 ```
 
-See [Installation Guide](docs/INSTALLATION.md) for detailed setup and development installation.
+### Step 2: Create a Subagent with Explicit Tool Call
 
-### Test the Setup
-
-1. Restart Claude Code
-2. Accept any prompts to enable the new MCP server
-3. Prompt `fetch §DESIGN.1` to verify it retrieves the policy section (after allowing necessary tools permissions)
-
-### Try it in a Subagent
-
-Create a simple agent that uses the policy server to fetch and reference policies (for example, `./.claude/agents/policy-tester.md`):
-
+**`.claude/agents/code-reviewer.md`:**
 ```markdown
 ---
-name: policy-tester
-description: Display design policy
-tools: mcp__policy-server__fetch_policies
+name: code-reviewer
+description: Reviews code for compliance with standards
+tools: mcp__policy-server__fetch_policies, Read, Glob
 ---
 
-CRITICAL: use mcp__policy-server__fetch_policies to ONLY retrieve `§DESIGN.1` before proceeding.
+You are a code reviewer following our team standards.
 
-Summarize the key points of §DESIGN.1 in your response.
+**Before reviewing code:** call `mcp__policy-server__fetch_policies` with `{"sections": ["§DESIGN.1", "§DESIGN.2"]}`
 ```
 
-The first statement instructs the agent to fetch the policy section before using it. The content of `§DESIGN.1` will be retrieved from your policy file and added to the subagent's context.
+### Step 3: Test and Run
 
-The second statement directly references the section (which is now in the context) and asks the agent to summarize the fetched policy section.
+1. Restart Claude Code
+2. Accept prompts to enable the MCP server
+3. Run `/mcp` to verify "policy-server" shows "connected"
+4. Run `@code-reviewer review this file`
 
-Restart Claude Code, then run the `policy-tester` subagent, and it should fetch and summarize the YAGNI policy section:
+See [Installation Guide](docs/INSTALLATION.md) for detailed setup.
 
+---
+
+## Method 3: CLI
+
+Use `policy-fetch` directly for scripts, CI/CD, or non-MCP integrations.
+
+### Extract Policies from a File
+
+```bash
+npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
 ```
-> run @agent-policy-tester
+
+Extracts § references from `document.md`, fetches matching policies, outputs to stdout.
+
+### Use in Scripts
+
+```bash
+# Inject policies into a prompt template
+POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-fetch agent.md --config "./policies/*.md")
+echo "Follow these policies: $POLICIES" | your-llm-tool
 ```
 
-## Available MCP Tools
+---
 
-### `mcp__policy-server__fetch_policies` - Retrieve Policy Sections
-Fetch sections with automatic reference resolution:
+## MCP Server Tools
+
+These tools are available when using [Method 2: MCP Server](#method-2-mcp-server).
+
+| Tool | Purpose |
+|------|---------|
+| `fetch_policies` | Retrieve sections with automatic reference resolution |
+| `validate_references` | Check that § references exist before using them |
+| `extract_references` | Scan a file for § references |
+| `list_sources` | List configured policy files and available prefixes |
+| `resolve_references` | Map sections to source files |
+
+**Example usage:**
 ```json
 {"sections": ["§PREFIX.1", "§PREFIX.2"]}
 ```
-
-### `mcp__policy-server__extract_references` - Find § References
-Scan files for policy references:
-```json
-{"file_path": "/path/to/agent.md"}
-```
-
-### `mcp__policy-server__validate_references` - Check References Exist
-Verify sections exist:
-```json
-{"references": ["§PREFIX.1", "§PREFIX.2"]}
-```
-
-### `mcp__policy-server__list_sources` - See Available Policies
-List all configured policy files and prefixes.
-
-### Other Tools
-- `mcp__policy-server__resolve_references` - Map sections to source files
 
 ## Use Cases
 
@@ -167,12 +228,12 @@ List all configured policy files and prefixes.
 
 ## Documentation
 
-- [Installation Guide](docs/INSTALLATION.md) - Setup instructions
-- [Getting Started](docs/GETTING_STARTED.md) - Creating policies and agents
-- [Configuration Reference](docs/CONFIGURATION_REFERENCE.md) - Config options
+- [Getting Started](docs/GETTING_STARTED.md) - Step-by-step setup for all three methods
+- [Installation Guide](docs/INSTALLATION.md) - Detailed installation options
+- [Configuration Reference](docs/CONFIGURATION_REFERENCE.md) - Config options for hooks, MCP, and CLI
 - [Policy Reference](docs/POLICY_REFERENCE.md) - § notation syntax
 - [Best Practices](docs/BEST_PRACTICES.md) - Patterns and strategies
 
 ## License
 
-[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html)
+[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.en.html)

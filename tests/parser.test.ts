@@ -551,6 +551,51 @@ Text after with §META.2
       // With proper fence matching, §APP.7 should be excluded
       expect(refs).toEqual([]);
     });
+
+    it('should find prefix-only references', () => {
+      const content = 'Follow §TS and §PY policies';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§TS', '§PY']);
+    });
+
+    it('should find mixed prefix-only and section references', () => {
+      const content = 'Use §TS for TypeScript, §PY.1.1 for typing, and §BASIC.2 for DRY';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§PY.1.1', '§BASIC.2', '§TS']);
+    });
+
+    it('should find prefix-only references in JSON array format', () => {
+      const content = '["§TS", "§PY", "§BE", "§BASIC.1-8"]';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§BASIC.1-8', '§TS', '§PY', '§BE']);
+    });
+
+    it('should not match §END as prefix-only reference', () => {
+      const content = 'Content here\n{§END}\nMore content with §APP.7';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§APP.7']);
+      expect(refs).not.toContain('§END');
+    });
+
+    it('should not extract partial prefix from section reference', () => {
+      const content = '§APP.7 is a single reference';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§APP.7']);
+      expect(refs).not.toContain('§APP');
+    });
+
+    it('should not extract partial prefix from hyphenated section reference', () => {
+      const content = '§APP-HOOK.2 is a single reference';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§APP-HOOK.2']);
+      expect(refs).not.toContain('§APP');
+    });
+
+    it('should find hyphenated prefix-only references', () => {
+      const content = 'Use §APP-HOOK and §SYS-TPL for templates';
+      const refs = findEmbeddedReferences(content);
+      expect(refs).toEqual(['§APP-HOOK', '§SYS-TPL']);
+    });
   });
 
   describe('isParentSection', () => {

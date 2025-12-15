@@ -1,11 +1,12 @@
 {
   "name": "@rcrsr/mcp-policy-server",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "MCP server providing token-efficient access to policy documentation via § notation",
   "main": "dist/index.js",
   "bin": {
     "@rcrsr/mcp-policy-server": "dist/index.js",
-    "mcp-policy-server": "dist/index.js"
+    "mcp-policy-server": "dist/index.js",
+    "policy-fetch": "dist/cli.js"
   },
   "repository": {
     "type": "git",
@@ -51,19 +52,19 @@
     "docs/**/*"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.24.3",
-    "fast-glob": "3.3.3"
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "fast-glob": "^3.3.3"
   },
   "devDependencies": {
-    "@types/jest": "30.0.0",
-    "@types/node": "24.9.1",
-    "@typescript-eslint/eslint-plugin": "8.46.2",
-    "@typescript-eslint/parser": "8.46.2",
-    "eslint": "9.38.0",
-    "jest": "30.2.0",
-    "prettier": "3.6.2",
-    "rimraf": "6.0.1",
-    "ts-jest": "29.4.5",
-    "typescript": "5.9.3"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.50.0",
+    "@typescript-eslint/parser": "^8.50.0",
+    "eslint": "^9.39.2",
+    "jest": "^30.2.0",
+    "prettier": "^3.7.4",
+    "rimraf": "^6.1.2",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
   }
 }

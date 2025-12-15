@@ -7,19 +7,21 @@ import * as fs from 'fs';
 import { ParsedSection, SectionNotation } from './types';
 
 // Regex patterns for section notation parsing
-const SECTION_NOTATION_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.([0-9.]+)$/;
-const SECTION_ID_PATTERN = /§([A-Z]+(?:-[A-Z]+)*)\.(\d+(?:\.\d+)*(?:-\d+(?:\.\d+)*)?)/g;
-const FULL_RANGE_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.(\d+)\.(\d+)-\2\.(\d+)$/;
-const SHORT_RANGE_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.(\d+)\.(\d+)-(\d+)$/;
-const WHOLE_SECTION_RANGE_PATTERN = /^([A-Z]+(?:-[A-Z]+)*)\.(\d+)-(\d+)$/;
+// Prefix format: starts with letter, then letters/digits/hyphens (e.g., CODE, CODE2, APP-HOOK)
+const SECTION_NOTATION_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.([0-9.]+)$/;
+const SECTION_ID_PATTERN =
+  /§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+(?:\.\d+)*(?:-\d+(?:\.\d+)*)?)/g;
+const FULL_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)\.(\d+)-\2\.(\d+)$/;
+const SHORT_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)\.(\d+)-(\d+)$/;
+const WHOLE_SECTION_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)-(\d+)$/;
 const SECTION_MARKER_PATTERN = /\{§/;
 
 /**
  * Pattern for prefix-only notation (§PREFIX without section number)
- * Matches: §APP, §META, §SYS, §APP-HOOK, etc.
+ * Matches: §APP, §META, §SYS, §APP-HOOK, §CODE2, etc.
  * Used to fetch all sections from a document
  */
-export const PREFIX_ONLY_PATTERN = /^§([A-Z]+(?:-[A-Z]+)*)$/;
+export const PREFIX_ONLY_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)$/;
 
 // Sections are sorted alphabetically by prefix, then numerically by section number
 
@@ -310,7 +312,8 @@ export function detectCodeBlockRanges(content: string): Array<{ start: number; e
  * Find all § references embedded in content
  *
  * Scans content for § notation and extracts all valid section references.
- * Supports ranges (§APP.4.1-3) and extended prefixes (§APP-HOOK.2).
+ * Supports ranges (§APP.4.1-3), extended prefixes (§APP-HOOK.2), and
+ * prefix-only references (§TS, §PY) that fetch entire documents.
  * Returns fully qualified references with § prefix intact.
  *
  * Excludes § references inside code blocks (backticks) to avoid false
@@ -328,6 +331,10 @@ export function detectCodeBlockRanges(content: string): Array<{ start: number; e
  * const rangeContent = 'Refer to §APP.4.1-3 for implementation';
  * findEmbeddedReferences(rangeContent)
  * // Returns: ['§APP.4.1-3']
+ *
+ * const prefixContent = 'Follow §TS and §PY policies';
+ * findEmbeddedReferences(prefixContent)
+ * // Returns: ['§TS', '§PY']
  *
  * const codeContent = 'Example: `§APP.7` is shown here';
  * findEmbeddedReferences(codeContent)
@@ -354,12 +361,21 @@ export function findEmbeddedReferences(content: string): SectionNotation[] {
   // Remove inline code blocks (`...`)
   cleanedContent = cleanedContent.replace(/`[^`]*`/g, '');
 
-  // Reset lastIndex before starting (global regex maintains state)
-  const pattern = new RegExp(SECTION_ID_PATTERN.source, SECTION_ID_PATTERN.flags);
-
+  // Match section references with numbers (§APP.7, §APP.4.1-3)
+  const sectionPattern = new RegExp(SECTION_ID_PATTERN.source, SECTION_ID_PATTERN.flags);
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(cleanedContent)) !== null) {
+  while ((match = sectionPattern.exec(cleanedContent)) !== null) {
     matches.push(`§${match[1]}.${match[2]}` as SectionNotation);
+  }
+
+  // Match prefix-only references (§TS, §PY, §APP-HOOK, §CODE2)
+  // Negative lookahead excludes: dot (section number), hyphen (extended prefix), word chars
+  // Excludes §END which is a special end-of-section marker
+  const prefixPattern = /§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)(?![.\w-])/g;
+  while ((match = prefixPattern.exec(cleanedContent)) !== null) {
+    if (match[1] !== 'END') {
+      matches.push(`§${match[1]}` as SectionNotation);
+    }
   }
 
   return matches;

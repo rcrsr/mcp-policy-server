@@ -177,11 +177,7 @@ describe('MCP Server Integration', () => {
         });
 
         test('works with mixed prefix-only and specific sections', () => {
-          const response = handleFetch(
-            { sections: ['§META', '§TEST.1'] },
-            TEST_CONFIG,
-            indexState
-          );
+          const response = handleFetch({ sections: ['§META', '§TEST.1'] }, TEST_CONFIG, indexState);
 
           const text = response.content[0].text;
           expect(text).toContain('§META.1');
@@ -370,11 +366,7 @@ describe('MCP Server Integration', () => {
       });
 
       test('resolves prefix-only notation to all matching sections', () => {
-        const response = handleResolveReferences(
-          { sections: ['§META'] },
-          TEST_CONFIG,
-          indexState
-        );
+        const response = handleResolveReferences({ sections: ['§META'] }, TEST_CONFIG, indexState);
 
         const result = JSON.parse(response.content[0].text);
         expect(result['policy-meta.md']).toBeDefined();

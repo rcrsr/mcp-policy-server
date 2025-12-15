@@ -1,63 +1,99 @@
 # Installation Guide
 
-This guide covers installing the Policy Documentation Server for use with MCP-compatible AI clients.
-
-**Designed for Claude Code subagents and commands (slash commands).** May work with other MCP-compatible clients that support agent-based workflows.
-
-See [Policy Reference](POLICY_REFERENCE.md) for § notation syntax.
+This guide covers installing the MCP Policy Server for all three integration methods.
 
 ## Prerequisites
 
 - Node.js 18 or later
-- Claude Code (tested) or other MCP-compatible AI client with subagent support
+- Claude Code (for Hook and MCP methods) or other MCP-compatible client
 
-## Installation Methods
+## Choose Your Method
 
-### Option 1: Install from npm (Recommended)
+| Method | When to Use | What to Install |
+|--------|-------------|-----------------|
+| **[Hook](#hook-installation)** | Claude Code subagents (recommended) | Configure `.claude/settings.json` |
+| **[MCP Server](#mcp-server-installation)** | Dynamic policy selection, other MCP clients | Configure `.mcp.json` or use `claude mcp add` |
+| **[CLI](#cli-installation)** | Scripts, CI/CD, non-MCP tools | Just run with `npx` |
 
-The `npx -y` command automatically downloads and runs the package - no separate install needed.
+All methods use the same npm package: `@rcrsr/mcp-policy-server`
 
-#### Step 1: Create Your Policies Directory
+---
+
+## Hook Installation
+
+The hook method injects policies automatically into subagent prompts via Claude Code's PreToolUse hooks.
+
+### Step 1: Create Your Policies Directory
+
+```bash
+mkdir -p ./policies
+```
+
+Add policy files with § notation (see [Getting Started](GETTING_STARTED.md#step-1-create-policy-files)).
+
+### Step 2: Configure the Hook
+
+Add to your project's `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+      }]
+    }]
+  }
+}
+```
+
+### Step 3: Restart Claude Code
+
+Restart Claude Code to load the new hook configuration.
+
+### Verify Installation
+
+Test the hook manually:
+
+```bash
+echo '{"tool_name":"Task","tool_input":{"prompt":"test","subagent_type":"my-agent"}}' | \
+  npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config "./policies/*.md"
+```
+
+You should see JSON output. If policies are found, they appear in `hookSpecificOutput.updatedInput.prompt`.
+
+---
+
+## MCP Server Installation
+
+The MCP server provides tools that subagents call explicitly to fetch policies.
+
+### Option A: Using Claude CLI (Recommended)
 
 **Linux/macOS:**
 ```bash
-mkdir -p ~/my-project/policies
+claude mcp add-json policy-server '{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@rcrsr/mcp-policy-server"],
+  "env": {"MCP_POLICY_CONFIG": "./policies/*.md"}}' \
+  --scope project
 ```
-
-**Windows:**
-```powershell
-mkdir C:\my-project\policies
-```
-
-See [Getting Started Guide](GETTING_STARTED.md) to create policies.json and policy files.
-
-#### Step 2: Add to Claude Code
-
-**Linux/macOS:**
-```bash
-claude mcp add-json policy-server --scope project '{
- "type": "stdio", 
- "command": "npx", 
- "args": ["-y", "@rcrsr/mcp-policy-server"], 
- "env": {"MCP_POLICY_CONFIG": "[relative/path/to/policies]"}
-}'
-```
-
 
 **Windows:**
 ```powershell
 claude mcp add-json policy-server ('{' `
   '"type": "stdio", "command": "cmd",' + `
   '"args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"], ' + `
-  '"env": {"MCP_POLICY_CONFIG": "[relative/path/to/policies]"}}') `
+  '"env": {"MCP_POLICY_CONFIG": "./policies/*.md"}}') `
   --scope project
 ```
 
-### Option 2: Manual Configuration
+### Option B: Manual .mcp.json Configuration
 
-#### Create .mcp.json in Your Project Root
-
-Create a `.mcp.json` file at the root of your project (the directory containing your policies folder):
+Create `.mcp.json` in your project root:
 
 **Linux/macOS:**
 ```json
@@ -67,7 +103,7 @@ Create a `.mcp.json` file at the root of your project (the directory containing 
       "command": "npx",
       "args": ["-y", "@rcrsr/mcp-policy-server"],
       "env": {
-        "MCP_POLICY_CONFIG": "[relative/path/to/policies]"
+        "MCP_POLICY_CONFIG": "./policies/*.md"
       }
     }
   }
@@ -82,27 +118,14 @@ Create a `.mcp.json` file at the root of your project (the directory containing 
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"],
       "env": {
-        "MCP_POLICY_CONFIG": "[relative/path/to/policies]"
+        "MCP_POLICY_CONFIG": "./policies/*.md"
       }
     }
   }
 }
 ```
 
-**Configuration Notes:**
-- `MCP_POLICY_CONFIG`: Glob pattern or path relative to the `.mcp.json` file location
-- Glob patterns recommended for simplicity (e.g., `./policies/*.md`)
-- Windows: Use forward slashes in paths (JSON compatible)
-- The `npx -y` command auto-installs the package on first use
-- Restart Claude Code after creating/modifying `.mcp.json`
-
-#### For Other MCP Clients
-
-Consult your client's documentation for MCP server configuration. Use the same configuration format as shown above (adapt paths for your OS).
-
 ### Verify Installation
-
-After installing with Option 1 (CLI) or Option 2 (Manual):
 
 1. Restart Claude Code
 2. Run `/mcp` to check server status
@@ -113,11 +136,41 @@ After installing with Option 1 (CLI) or Option 2 (Manual):
 - Server not listed: Verify `.mcp.json` syntax (use a JSON validator)
 - Connection errors: Check Node.js is installed (`node --version`)
 
-### Option 3: Development Installation (Local Project Files)
+### For Other MCP Clients
 
-For development, local testing, or when you want to modify the server code:
+Consult your client's documentation for MCP server configuration. Use the same configuration format as shown above.
 
-#### Step 1: Clone and Build
+---
+
+## CLI Installation
+
+The CLI requires no installation—just run with `npx`.
+
+### Basic Usage
+
+```bash
+# Extract policies referenced in a file
+npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+```
+
+### Global Installation (Optional)
+
+For frequent use, install globally:
+
+```bash
+npm install -g @rcrsr/mcp-policy-server
+
+# Then use without npx
+policy-fetch document.md --config "./policies/*.md"
+```
+
+---
+
+## Development Installation
+
+For development, local testing, or modifying the server code:
+
+### Step 1: Clone and Build
 
 ```bash
 git clone https://github.com/rcrsr/mcp-policy-server.git
@@ -126,11 +179,12 @@ npm install
 npm run build
 ```
 
-#### Step 2: Create .mcp.json in Your Project Root
+### Step 2: Configure for Development
 
-Create `.mcp.json` at the root of your project (where your policies directory is located):
+**For MCP Server:**
 
-**Linux/macOS:**
+Create `.mcp.json` pointing to the local build:
+
 ```json
 {
   "mcpServers": {
@@ -145,39 +199,43 @@ Create `.mcp.json` at the root of your project (where your policies directory is
 }
 ```
 
-**Windows:**
+**For Hook:**
+
+Update `.claude/settings.json` to use local CLI:
+
 ```json
 {
-  "mcpServers": {
-    "policy-server": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-policy-server/dist/index.js"],
-      "env": {
-        "MCP_POLICY_CONFIG": "./policies/*.md"
-      }
-    }
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "node /absolute/path/to/mcp-policy-server/dist/cli.js --hook --config \"./policies/*.md\""
+      }]
+    }]
   }
 }
 ```
 
 **Important:**
-- `args`: Use absolute path to the server's `dist/index.js` file
-- `MCP_POLICY_CONFIG`: Can be relative to your project root
-- Windows: Use forward slashes or escaped backslashes in JSON
-- Point to `dist/index.js` (compiled), not `src/index.ts`
-- Run `npm run build` after making changes to the server code
+- Point to `dist/index.js` (MCP server) or `dist/cli.js` (CLI), not TypeScript source
+- Run `npm run build` after making changes
+
+---
+
+## Configuration Notes
+
+- `MCP_POLICY_CONFIG`: Glob pattern or path to policy files
+- Glob patterns recommended: `./policies/*.md`, `./policies/**/*.md`
+- Windows: Use forward slashes in JSON paths
+- Restart Claude Code after configuration changes
+
+See [Configuration Reference](CONFIGURATION_REFERENCE.md) for detailed options.
 
 ## Next Steps
 
-After installation:
+1. **Create policy files** - See [Getting Started](GETTING_STARTED.md#step-1-create-policy-files)
+2. **Create subagents** - See [Getting Started](GETTING_STARTED.md) for your chosen method
+3. **Test the setup** - Verify policies are fetched correctly
 
-1. **Create policy files** - See [Getting Started Guide](GETTING_STARTED.md) for step-by-step setup
-2. **Configure policies.json** - Map prefixes to policy files
-3. **Restart your AI client** - Load the new MCP server
-4. **Test the server** - Use `mcp__policy-server__list_sources` tool to verify
-
-For troubleshooting, see [Getting Started Guide](GETTING_STARTED.md#troubleshooting).
-
-## Configuration Reference
-
-See [Configuration Reference](CONFIGURATION_REFERENCE.md) for detailed configuration options and advanced setup.
+For troubleshooting, see [Getting Started](GETTING_STARTED.md#troubleshooting).

@@ -1,18 +1,24 @@
 # Getting Started with MCP Policy Server
 
-This guide walks you through setting up the Policy Server from scratch. You'll create policy files, configure the server, and write your first subagent that uses policy references.
+This guide walks you through setting up the Policy Server from scratch. You'll create policy files, configure your preferred integration method, and write your first subagent that uses policy references.
 
-**Note:** Designed for Claude Code subagents and commands (slash commands). The § notation works most effectively when subagents can programmatically fetch policy sections via MCP tools.
+## Choose Your Integration Method
 
-## Step 1: Install the Server
+| Method | Best For | Setup Complexity |
+|--------|----------|------------------|
+| **[Hook](#hook-setup-recommended-for-claude-code)** | Claude Code subagents | Simple - just configure `.claude/settings.json` |
+| **[MCP Server](#mcp-server-setup)** | Dynamic policy selection, other MCP clients | Medium - requires MCP server configuration |
+| **[CLI](#cli-setup)** | Scripts, CI/CD, non-MCP tools | Simple - command-line only |
 
-See [INSTALLATION.md](INSTALLATION.md) for prerequisites and complete installation instructions. Once installed, continue with this guide to create your policies.
+**Recommendation:** Start with the Hook method for Claude Code projects. Switch to MCP Server only if you need dynamic policy selection based on prompt content.
 
-## Step 2: Create Policy Files
+---
 
-Create your first policy file with section markers.
+## Step 1: Create Policy Files
 
-**policies/policy-example.md:**
+All methods require policy files with § notation. Create your first policy file:
+
+**`policies/policy-example.md`:**
 ```markdown
 # Example Policy Document
 
@@ -36,239 +42,257 @@ Refer back to §EXAMPLE.1 for context.
 **Key points:**
 - Use format `## {§PREFIX.N}` for section markers (see [Policy Reference](POLICY_REFERENCE.md) for complete syntax)
 - Sections can reference other sections (§EXAMPLE.3 referenced from §EXAMPLE.2)
+- Prefixes are extracted automatically from section IDs
 
-## Step 3: Configure Policy Files
+---
 
-The server requires a configuration specifying which policy files to load. You can configure this in three ways:
+## Hook Setup (Recommended for Claude Code)
 
-### Option 1: Direct Glob Pattern (Recommended - Simplest)
+The hook method injects policies automatically into subagent prompts. No MCP connection required.
 
-Set `MCP_POLICY_CONFIG` environment variable to a glob pattern in your `.mcp.json` file:
+### Step 2: Configure the Hook
 
-**Linux/macOS - .mcp.json in project root:**
+Add to your project's `.claude/settings.json`:
+
 ```json
 {
-  "mcpServers": {
-    "policy-server": {
-      "command": "npx",
-      "args": ["-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "./policies/*.md"
-      }
-    }
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+      }]
+    }]
   }
 }
 ```
 
-**Windows - .mcp.json in project root:**
-```json
-{
-  "mcpServers": {
-    "policy-server": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "./policies/*.md"
-      }
-    }
-  }
-}
+**Configuration options:**
+- `-c, --config` - Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`)
+- `--hook` - Enables hook mode (reads JSON from stdin, outputs to stdout)
+
+### Step 3: Create a Subagent with Policy References
+
+Add § references anywhere in your agent file. The hook extracts all references automatically.
+
+**`.claude/agents/policy-agent.md`:**
+```markdown
+---
+name: policy-agent
+description: Example agent that uses policy sections
+---
+
+Follow §EXAMPLE.1 and §EXAMPLE.2 when completing tasks.
+
+You are an agent that follows team policies.
+Cite specific policy sections when explaining your decisions.
 ```
 
-**Supported glob patterns:**
-- `./policies/*.md` - All .md files in directory
-- `./policies/policy-*.md` - Files matching pattern
-- `./policies/**/*.md` - Recursive directory search
-- `./{policies,docs}/*.md` - Brace expansion for multiple directories
+**Key points:**
+- § references can appear anywhere in the file—no special format required
+- References inside code fences are ignored (for documenting examples)
+- The hook extracts all § references and injects the policy content
 
-### Option 2: JSON Configuration File
+### Step 4: Run the Subagent
 
-Create a `policies.json` file listing your policy files:
-
-**policies/policies.json:**
-```json
-{
-  "files": [
-    "./policy-*.md"
-  ]
-}
+```
+> @policy-agent complete the task
 ```
 
-Set `MCP_POLICY_CONFIG` to the JSON file path (or omit to use default `./policies.json`):
+**What happens:**
+1. Claude Code invokes the Task tool with the agent file
+2. PreToolUse hook triggers `policy-fetch --hook`
+3. Hook extracts all § references from the agent file (§EXAMPLE.1, §EXAMPLE.2)
+4. Policies are fetched and injected into the prompt wrapped in `<policies>` tags
+5. Subagent receives policies automatically—no explicit tool call needed
+6. §EXAMPLE.3 (referenced from §EXAMPLE.2) is included automatically
+
+### Step 5: Use Prefix-Only References
+
+Fetch all sections with a given prefix using prefix-only notation:
+
+```markdown
+Follow all §EXAMPLE and §OTHER policies.
+```
+
+This expands `§EXAMPLE` to all `§EXAMPLE.*` sections and `§OTHER` to all `§OTHER.*` sections. Useful for fetching entire policy categories.
+
+### Verify Hook Setup
+
+Test that the hook works:
+
+```bash
+# Simulate hook input
+echo '{"tool_name":"Task","tool_input":{"prompt":"test","subagent_type":"policy-agent"}}' | \
+  npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config "./policies/*.md"
+```
+
+You should see JSON output with policies in `hookSpecificOutput.updatedInput.prompt`.
+
+---
+
+## MCP Server Setup
+
+Use the MCP server when subagents need to dynamically select policies based on prompt content, or when using MCP-compatible clients other than Claude Code.
+
+### Step 2: Install the MCP Server
 
 **Linux/macOS:**
-```json
-{
-  "mcpServers": {
-    "policy-server": {
-      "command": "npx",
-      "args": ["-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "./policies/policies.json"
-      }
-    }
-  }
-}
+```bash
+claude mcp add-json policy-server '{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@rcrsr/mcp-policy-server"],
+  "env": {"MCP_POLICY_CONFIG": "./policies/*.md"}}' \
+  --scope project
 ```
 
 **Windows:**
-```json
-{
-  "mcpServers": {
-    "policy-server": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "./policies/policies.json"
-      }
-    }
-  }
-}
+```powershell
+claude mcp add-json policy-server ('{' `
+  '"type": "stdio", "command": "cmd",' + `
+  '"args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"], ' + `
+  '"env": {"MCP_POLICY_CONFIG": "./policies/*.md"}}') `
+  --scope project
 ```
 
-**If `MCP_POLICY_CONFIG` is not set**, the server loads `./policies.json` from the working directory.
+Or create `.mcp.json` manually (see [Installation Guide](INSTALLATION.md) for details).
 
-### Option 3: Inline JSON Configuration
+### Step 3: Verify Installation
 
-Pass the configuration directly as a JSON string:
+1. Restart Claude Code
+2. Run `/mcp` to check server status
+3. Look for "policy-server" with "connected" status
 
-**Linux/macOS:**
-```json
-{
-  "mcpServers": {
-    "policy-server": {
-      "command": "npx",
-      "args": ["-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "{\"files\": [\"./policies/*.md\"]}"
-      }
-    }
-  }
-}
-```
-
-**Windows:**
-```json
-{
-  "mcpServers": {
-    "policy-server": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "@rcrsr/mcp-policy-server"],
-      "env": {
-        "MCP_POLICY_CONFIG": "{\"files\": [\"./policies/*.md\"]}"
-      }
-    }
-  }
-}
-```
-
-### Path Resolution Rules
-
-- **File-based configuration** (Option 2): Relative paths resolve from the directory containing `policies.json`
-- **Environment variable configuration** (Options 1 and 3): Relative paths resolve from the working directory (where the server process starts)
-- **Absolute paths**: Always use absolute paths in MCP client configurations to avoid ambiguity
-
-See [Configuration Reference](./CONFIGURATION_REFERENCE.md) for complete configuration options and examples.
-
-## Step 4: Test the Server
-
-See [README.md](../README.md#available-mcp-tools) for complete tool documentation. To verify installation, ask Claude Code to list available policies:
-
+Test by asking Claude Code:
 ```
 Use the MCP list_sources tool to show me available policies
 ```
 
-You should see your configured policy files and available section prefixes.
+### Step 4: Create a Subagent with Explicit Tool Call
 
-## Step 5: Create a Subagent That Uses Policies
+**Key principle:** Subagents must explicitly call `mcp__policy-server__fetch_policies`. Simply mentioning § references is not enough.
 
-Create a subagent file that references your policies.
-
-**Key principle:** Subagents must be explicitly instructed to call `mcp__policy-server__fetch_policies` with the sections they need. Simply mentioning § references is not enough - subagents need clear instructions to fetch them.
-
-**.claude/agents/policy-agent.md:**
+**`.claude/agents/policy-agent.md`:**
 ````markdown
 ---
 name: policy-agent
 description: Example agent that uses policy sections
 tools: mcp__policy-server__fetch_policies, Read
-model: inherit
 ---
 
 You are an agent that follows team policies.
 
 ## Process
 
-When completing tasks:
-
-1. **Fetch relevant policies** by calling the `mcp__policy-server__fetch_policies` tool with:
+1. **Fetch policies** by calling `mcp__policy-server__fetch_policies` with:
    ```json
    {"sections": ["§EXAMPLE.1", "§EXAMPLE.2"]}
    ```
-   This retrieves the policy sections from your configured files.
 
 2. **Apply the policies** to your work
 
-3. **Provide output** that follows the fetched standards
+3. **Cite specific sections** when explaining decisions
 
-## Important
-
-Always fetch policies FIRST. The § references in step 1 are placeholders - you must actually call the tool to get the policy content.
-
-Cite specific policy sections when explaining your decisions.
+Always fetch policies FIRST before proceeding with the task.
 ````
 
-## Step 6: Use the Subagent
-
-Invoke your subagent:
+### Step 5: Run the Subagent
 
 ```
-@agent-policy-agent complete the task
+> @policy-agent complete the task
 ```
 
 **What happens:**
-1. Subagent reads its instructions
-2. Subagent sees references to §EXAMPLE.1, §EXAMPLE.2
-3. Subagent calls MCP `mcp__policy-server__fetch_policies` tool with those sections
-4. Server returns requested sections PLUS §EXAMPLE.3 (referenced from §EXAMPLE.2)
-5. Subagent applies policies to complete the task
-6. Subagent provides output with specific policy citations
+1. Subagent reads instructions and calls `fetch_policies` tool
+2. Server returns §EXAMPLE.1, §EXAMPLE.2, plus §EXAMPLE.3 (auto-resolved reference)
+3. Subagent applies policies and cites specific sections
 
-## Step 7: Automatic Policy Updates
+### Dynamic Policy Selection
 
-Policy files are watched automatically for changes. Updates appear on the next tool call without restarting the server.
+The MCP server enables dynamic policy selection based on prompt content:
+
+````markdown
+---
+name: code-reviewer
+tools: mcp__policy-server__fetch_policies, Read
+---
+
+You review code for compliance with team standards.
+
+## Process
+
+1. **Analyze the code** to determine which languages/frameworks are used
+
+2. **Fetch relevant policies** based on your analysis:
+   - Python code: `{"sections": ["§CODE-PY.1-5"]}`
+   - JavaScript code: `{"sections": ["§CODE-JS.1-5"]}`
+   - API changes: `{"sections": ["§API.1-3"]}`
+
+3. **Review against fetched policies**
+````
+
+---
+
+## CLI Setup
+
+Use the CLI for scripts, CI/CD pipelines, or non-MCP integrations.
+
+### Extract Policies from a File
+
+```bash
+npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+```
+
+Extracts § references from `document.md`, fetches matching policies, outputs to stdout.
+
+### Use in Scripts
+
+```bash
+# Inject policies into a prompt
+POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-fetch agent.md --config "./policies/*.md")
+echo "Follow these policies:\n$POLICIES\n\nNow complete the task..." | your-llm-tool
+```
+
+### CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Validate policy references
+  run: |
+    npx -p @rcrsr/mcp-policy-server policy-fetch .claude/agents/*.md \
+      --config "./policies/*.md" > /dev/null
+```
+
+---
+
+## Automatic Policy Updates
+
+Policy files are watched automatically for changes. Updates appear on the next request without restart.
 
 **How it works:**
-1. Server monitors all configured policy files for changes
+1. Files are monitored for changes
 2. When a file changes, the section index is marked stale
-3. On the next MCP tool call, the index rebuilds automatically
-4. Changes appear within seconds after saving your policy files
+3. On the next request, the index rebuilds automatically
 
 **What triggers updates:**
 - File content changes (save/modify)
 - File deletion
 - File rename
 
-**No restart needed:**
-```markdown
-# Edit your policy file
-## {§EXAMPLE.1} First Section
-
-Updated content here...  # <-- Save the file
-
-# Next tool call automatically sees the changes
-```
-
 **Limitations:**
-- New files matching existing glob patterns require server restart
-- Configuration changes (adding new patterns) require server restart
+- New files matching existing glob patterns require restart
+- Configuration changes require restart
 - Files on network drives or WSL may have delayed updates
 
-## Step 8: Expand Your Policies
+---
 
-Add more policy files as needed:
+## Expand Your Policies
 
-**policies/policy-other.md:**
+Add more policy files as your standards grow:
+
+**`policies/policy-other.md`:**
 ```markdown
 # Additional Policies
 
@@ -283,80 +307,47 @@ Additional guidelines and standards.
 See §EXAMPLE.1 for related information.
 ```
 
-If using a glob pattern, the new file is automatically included (no configuration changes needed):
+The glob pattern `./policies/*.md` automatically includes new files (restart required to detect new files).
 
-**Configuration:**
-```json
-{
-  "files": [
-    "./policies/policy-*.md"
-  ]
-}
-```
-
-The pattern `./policies/policy-*.md` matches both `policy-example.md` and `policy-other.md`. Restart the server to detect the new file.
-
-See [Configuration Reference](CONFIGURATION_REFERENCE.md#examples) for advanced examples.
-
-Create subagents that reference multiple policies:
-
-**.claude/agents/multi-policy-agent.md:**
-```markdown
-You are an agent that follows multiple policy categories.
-
-Before proceeding, fetch:
-- §EXAMPLE.1 (first example section)
-- §OTHER.1 (other policy section)
-- §OTHER.2 (additional guidelines)
-```
+---
 
 ## Advanced Features
 
-The server supports advanced § notation features:
-
-- **Range notation**: `§EXAMPLE.1-3` expands to sections 1, 2, and 3 (see [Policy Reference](POLICY_REFERENCE.md#range-notation) for complete syntax and rules)
+- **Range notation**: `§EXAMPLE.1-3` expands to sections 1, 2, and 3
+- **Prefix-only notation**: `§EXAMPLE` expands to all `§EXAMPLE.*` sections
 - **Subsections**: `§EXAMPLE.1.1` for nested content organization
-- **Hyphenated prefixes**: `§PREFIX-EXT.1` resolves via base prefix
-- **Automatic reference resolution**: Fetching `§EXAMPLE.2` also fetches any sections it references (like `§EXAMPLE.3`)
+- **Hyphenated prefixes**: `§PREFIX-EXT.1` for category extensions
+- **Automatic reference resolution**: Fetching a section also fetches any sections it references
 
-See [Policy Reference](POLICY_REFERENCE.md) for complete § notation syntax and examples.
+See [Policy Reference](POLICY_REFERENCE.md) for complete § notation syntax.
+
+---
 
 ## Troubleshooting
 
-### Configuration Issues
-- **Server won't start**: Check `MCP_POLICY_CONFIG` is set and points to valid file/pattern
+### Hook Issues
+- **Policies not injected**: Verify `.claude/settings.json` syntax and hook configuration
+- **Wrong policies**: Check the JSON array in your agent file matches available sections
+- **Hook not triggering**: Ensure matcher is "Task" (case-sensitive)
+
+### MCP Server Issues
+- **Server won't start**: Check `MCP_POLICY_CONFIG` points to valid file/pattern
 - **No files found**: Verify glob pattern matches `.md` files
-- **Windows paths**: Use forward slashes: `C:/path/to/policies.json`
+- **Connection failed**: Run `/mcp` to check status, restart Claude Code
 
 ### Section Issues
-- **Section not found**: Check section exists and format is `## {§PREFIX.1}`
-- **Prefix not recognized**: Verify policy file is in configured files list
-- **Duplicates**: Same section ID in multiple files - remove from one
+- **Section not found**: Check format is `## {§PREFIX.1}` with curly braces
+- **Duplicates warning**: Same section ID in multiple files—remove from one
 
-### Subagent Issues
-- **Subagent ignoring policies**: Add explicit tool call instructions (see Step 5)
-- **Stale content**: Edit policy file to trigger reload, or restart server
+### General
+- **Windows paths**: Use forward slashes in JSON: `./policies/*.md`
+- **Stale content**: Edit policy file to trigger reload, or restart
 
-## Tips
-
-- Use Claude Code to generate policy files from codebase patterns
-- Use `mcp__policy-server__validate_references` tool to check subagent policy references
-- Use `mcp__policy-server__extract_references` to find which subagents use specific policies
+---
 
 ## Next Steps
 
-- **Add more policies**: Create additional policy files matching your glob pattern
-- **Organize with prefixes**: Use hyphenated prefixes for category organization
-- **Create specialized subagents**: Build subagents for specific tasks
-- **Cross-reference policies**: Link related sections with § notation for automatic dependency resolution
-- **Validate references**: Use `mcp__policy-server__validate_references` tool before deploying subagents
-- **Monitor updates**: Check server logs for `[WATCH]` and `[INDEX]` messages to see automatic updates in action
-
-## Reference
-
 - [Configuration Reference](CONFIGURATION_REFERENCE.md) - Detailed configuration options
 - [Policy Reference](POLICY_REFERENCE.md) - Complete § notation syntax
-
-## Examples
-
-See the `tests/fixtures/sample-policies/` directory in the repository for example policy files with various section structures.
+- [Best Practices](BEST_PRACTICES.md) - Patterns and strategies
+- See `tests/fixtures/sample-policies/` for example policy files

@@ -11,6 +11,7 @@ import {
   expandRange,
   isParentSection,
   sortSections,
+  PREFIX_ONLY_PATTERN,
 } from './parser.js';
 import { GatheredSection, SectionNotation, SectionIndex } from './types.js';
 
@@ -209,8 +210,18 @@ export function gatherSectionsWithIndex(
 
     // Find embedded references in extracted content
     const embedded = findEmbeddedReferences(content);
-    // Expand any range notation in embedded references
-    const expandedEmbedded = embedded.flatMap((ref) => expandRange(ref));
+    // Expand any range or prefix-only notation in embedded references
+    const expandedEmbedded = embedded.flatMap((ref) => {
+      const prefixMatch = ref.match(PREFIX_ONLY_PATTERN);
+      if (prefixMatch) {
+        // Prefix-only reference: expand to all sections with that prefix
+        const prefix = prefixMatch[1];
+        return Array.from(index.sectionMap.keys()).filter((section) =>
+          section.startsWith(`§${prefix}.`)
+        );
+      }
+      return expandRange(ref);
+    });
     for (const ref of expandedEmbedded) {
       if (!processed.has(ref) && !queue.some((item) => item.notation === ref)) {
         queue.push({ notation: ref, referredBy: notation });

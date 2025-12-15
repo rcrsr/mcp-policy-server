@@ -1,12 +1,17 @@
 ## Quickstart
 
-MCP server that exposes policy documentation via § notation with automatic reference resolution, range expansion, and section validation.
+MCP server and CLI tool for policy documentation via § notation with automatic reference resolution, range expansion, and section validation.
+
+**Three integration methods:**
+1. **Hook** (recommended for Claude Code) - Policies injected via PreToolUse hooks
+2. **MCP Server** - Subagents call `fetch_policies` tool explicitly
+3. **CLI** - Command-line policy extraction for scripts/CI
 
 **Build and run:**
 ```bash
 npm install
 npm run build
-npm start
+npm start          # MCP server
 ```
 
 **Run tests:**
@@ -26,7 +31,7 @@ npm test
 - `npm run build` - Compile TypeScript to dist/
 - `npm run watch` - Recompile on file changes
 - `npm run clean` - Remove dist/, coverage/, build artifacts
-- `npm start` - Start server (requires built files)
+- `npm start` - Start MCP server (requires built files)
 
 **Testing:**
 - `npm test` - Run Jest test suites
@@ -44,16 +49,22 @@ npm test
 **Testing with MCP Inspector:**
 - `npx @modelcontextprotocol/inspector node dist/index.js` - Interactive testing
 
+**CLI testing:**
+- `node dist/cli.js --help` - Show CLI options
+- `node dist/cli.js --hook --config "./policies/*.md"` - Test hook mode
+
 ## Architecture
 
 ```
 src/
   index.ts          - MCP server, tools, response chunking, startup validation
+  cli.ts            - CLI tool for policy-fetch command (hook mode, file extraction)
   config.ts         - Load policies.json, resolve policy directory
   handlers.ts       - MCP tool business logic, coordinates components
+  indexer.ts        - Section indexing, file watching, duplicate detection, lazy refresh
   parser.ts         - Parse § notation, expand ranges, extract sections, find references
-  resolver.ts       - Recursive resolution, file discovery, deduplication
-  validator.ts      - Duplicate section detection
+  resolver.ts       - Recursive resolution, deduplication
+  validator.ts      - Duplicate section validation from index
   types.ts          - TypeScript type definitions
 
 tests/              - Jest test suites with fixture-based configuration
@@ -61,6 +72,7 @@ tests/              - Jest test suites with fixture-based configuration
   resolver.test.ts
   validator.test.ts
   server.test.ts
+  cli.test.ts       - CLI tool tests (hook mode, file extraction)
 
 dist/               - Compiled JavaScript output
 ```
@@ -68,7 +80,7 @@ dist/               - Compiled JavaScript output
 ## Implementation Details
 
 **Section extraction logic:**
-- Whole sections (§DOC.4) stop at next whole section, {§END}, or EOF
+- Whole sections (§DOC.4) stop at next whole section of same prefix (§DOC.5), {§END}, or EOF
 - Subsections (§DOC.4.1) stop at any next § marker
 - Regex-based section header matching
 

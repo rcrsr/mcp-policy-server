@@ -1,14 +1,76 @@
 # Release Notes
 
+## v0.4.0 (2025-12-15)
+
+### Highlights
+
+**New `policy-fetch` CLI** - The preferred way to inject policies into Claude Code subagents.
+
+The CLI hook approach is more reliable than the MCP server for Claude Code integration:
+- Policies injected directly into agent prompts via PreToolUse hooks
+- No MCP connection required - works with any Claude Code project
+- Cross-platform support (Windows, macOS, Linux)
+- Automatic § reference extraction from agent files
+
+### Features
+
+- New `policy-fetch` CLI tool for extracting and fetching policies
+  - File mode: extract § references from any file, output policies to stdout
+  - Hook mode: integrate with Claude Code PreToolUse hooks
+- Claude Code hook integration via `--hook` flag
+  - Reads hook JSON from stdin, injects policies into Task tool prompts
+  - Policies wrapped in `<policies>` tags for clear context
+  - Falls back gracefully when no agent file or policies found
+  - Skips injection when agent has `mcp__policy-server__fetch_policies` tool (avoids duplication)
+- Prefix-only references in `findEmbeddedReferences`
+  - `§TS`, `§PY`, `§BE` expand to all sections with that prefix
+  - Works in both CLI extraction and recursive resolution
+
+### Bug Fixes
+
+- Excluded `§END` from prefix-only matching (special end-of-section marker)
+
+### Security
+
+- Updated dependencies
+
+### Usage
+
+Add to your project's `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+      }]
+    }]
+  }
+}
+```
+
+Agent files in `.claude/agents/` can reference policies anywhere in the file:
+```markdown
+Required: §TS, §PY, §BASIC.1-8
+```
+
+The hook automatically extracts these references and injects the policies into agent prompts.
+
+**Standalone usage:**
+```bash
+npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+```
+
+---
+
 ## v0.3.2 (2025-12-04)
 
 ### Security
 
-- Updated @modelcontextprotocol/sdk from 1.20.2 to 1.24.3 (fixes DNS rebinding vulnerability)
-- Updated transitive dependencies to fix 5 additional vulnerabilities:
-  - body-parser 2.2.0 → 2.2.1 (DoS via url encoding)
-  - glob 10.4.5 → 10.5.0, 11.0.3 → 11.1.0 (command injection in CLI)
-  - js-yaml 3.14.1 → 3.14.2, 4.1.0 → 4.1.1 (prototype pollution)
+- Package updates for dependencies with known vulnerabilities
 
 ---
 
@@ -24,7 +86,6 @@
 ### Testing
 
 - Added 22 new tests for prefix-only notation
-- Total test count: 262 tests
 
 ---
 
@@ -112,7 +173,6 @@ See docs/CONFIGURATION_REFERENCE.md for migration guide.
 
 - Added 189 new tests (62 parser, 127 validator)
 - Added test fixtures for edge cases
-- Total test count: 260 tests
 
 ---
 

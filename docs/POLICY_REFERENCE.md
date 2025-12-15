@@ -18,7 +18,7 @@ The § (section sign) notation references specific policy documentation sections
 
 **Components:**
 - `§` - Required section symbol (U+00A7)
-- `PREFIX` - Uppercase prefix identifier (user-defined)
+- `PREFIX` - Uppercase identifier: starts with letter, followed by letters or digits (e.g., CODE, CODE2, API3)
 - `.N` - Dot-separated section numbers (numeric only)
 - `−N` - Optional range end (hyphen followed by number)
 
@@ -34,28 +34,21 @@ The § (section sign) notation references specific policy documentation sections
 
 ### Section Levels
 
-**Top-level (§PREFIX.N):**
+**Top-level (§PREFIX.N):** Must use `##` heading level.
 ```markdown
 ## {§PREFIX.1}
 Section content...
 ```
 
-**Subsections (§PREFIX.N.N):**
+**Subsections (§PREFIX.N.N):** Can use `##` or `###` heading level.
 ```markdown
 ### {§PREFIX.1.1}
 Subsection content...
 ```
 
-**Deep subsections (§PREFIX.N.N.N):**
-```markdown
-#### {§PREFIX.1.1.1}
-Deep subsection content...
-```
-
 **Examples:**
 - `§PREFIX.1` - Top-level section
 - `§PREFIX.1.1` - Subsection
-- `§PREFIX.1.1.1` - Deep subsection
 
 ## Range Notation
 
@@ -81,14 +74,56 @@ Ranges expand to all sections between start and end (inclusive).
 4. **Inclusive** - Both start and end included
 
 **Valid ranges:**
-- `§PREFIX.1-3` - Section range
-- `§PREFIX.1.1-3` - Subsection range with same parent
+- `§PREFIX.1-3` - Section range (expands to §PREFIX.1, §PREFIX.2, §PREFIX.3)
+- `§PREFIX.1.1-3` - Subsection range (expands to §PREFIX.1.1, §PREFIX.1.2, §PREFIX.1.3)
+- `§PREFIX.1.1-5` - Subsection range (expands to §PREFIX.1.1 through §PREFIX.1.5)
 
 **Invalid ranges:**
-- `§PREFIX.1-3.2` - Mixed depth
-- `§PREFIX.1.1-5` - Different depth levels
-- `§PREFIX.1.1-5.3` - Different parents
-- `§PREFIX.5-2` - Backwards (start > end)
+- `§PREFIX.1-3.2` - Mixed depth (not parsed as range)
+- `§PREFIX.1.1-5.3` - Different parents (not parsed as range)
+- `§PREFIX.5-2` - Backwards (returns empty result, no error)
+
+## Prefix-Only Notation
+
+Use prefix-only notation to fetch all sections with a given prefix.
+
+### Format
+
+```
+§PREFIX
+```
+
+No section number—just the § symbol followed by the prefix.
+
+### Expansion
+
+Prefix-only references expand to all sections with that prefix:
+
+```
+§DESIGN expands to §DESIGN.1, §DESIGN.2, §DESIGN.3, ...
+§API expands to §API.1, §API.2, §API.1.1, §API.1.2, ...
+§CODE-PY expands to §CODE-PY.1, §CODE-PY.2, ...
+```
+
+### Use Cases
+
+**Fetch entire policy categories:**
+```markdown
+["§DESIGN", "§API"]
+```
+
+This fetches all design and API policies without listing each section.
+
+**In agent files (hook method):**
+```markdown
+["§TS", "§PY", "§BASIC.1-8"]
+```
+
+Combines prefix-only (`§TS`, `§PY`) with range notation (`§BASIC.1-8`).
+
+### Special Case: §END
+
+The `§END` marker is excluded from prefix expansion. It's a special end-of-section marker, not a policy section.
 
 ## Hyphenated Prefixes
 
@@ -157,7 +192,7 @@ Fetching §PREFIX.1 returns all child content (§PREFIX.1.1, §PREFIX.1.2, §PRE
 ### Stopping Rules
 
 **Whole sections (§PREFIX.N):**
-- Stop at next whole section
+- Stop at next whole section of same prefix (§PREFIX.M)
 - Stop at {§END} marker
 - Stop at end of file
 
@@ -211,7 +246,9 @@ The `mcp__policy-server__validate_references` tool checks format, prefix existen
 ```json
 {
   "valid": true,
-  "checked": 3
+  "checked": 3,
+  "invalid": [],
+  "details": []
 }
 ```
 
@@ -221,7 +258,7 @@ The `mcp__policy-server__validate_references` tool checks format, prefix existen
   "valid": false,
   "checked": 3,
   "invalid": ["§PREFIX.999"],
-  "details": ["§PREFIX.999: Section not found in policy-file.md"]
+  "details": ["§PREFIX.999: Section not found in policy files"]
 }
 ```
 
@@ -290,12 +327,12 @@ Use ranges and parents to avoid duplication:
 §PREFIX.1.1, §PREFIX.1.2, §PREFIX.1.3    ❌ Redundant
 ```
 
-### Sequential Numbering
+### Stable Numbering
 
-Number sections sequentially without gaps:
+Number sections sequentially and avoid renumbering:
 ```
-§PREFIX.1, §PREFIX.2, §PREFIX.3    ✓
-§PREFIX.1, §PREFIX.5, §PREFIX.10    ❌ Gaps in numbering
+§PREFIX.1, §PREFIX.2, §PREFIX.3    ✓ Sequential
+§PREFIX.1, §PREFIX.2, §PREFIX.4    ✓ Gap from removed section (preserves existing refs)
 ```
 
 ## Code Blocks and Examples

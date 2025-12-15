@@ -1,8 +1,78 @@
 # Configuration Reference
 
-Complete reference for configuring the Policy Documentation Server.
+Complete reference for configuring the MCP Policy Server across all integration methods.
 
 ## Overview
+
+The MCP Policy Server supports three integration methods, each with its own configuration:
+
+| Method | Configuration Location | Key Options |
+|--------|----------------------|-------------|
+| **Hook** | `.claude/settings.json` | `--config`, `--hook` |
+| **MCP Server** | `.mcp.json` or `claude mcp add` | `MCP_POLICY_CONFIG` env var |
+| **CLI** | Command-line arguments | `--config`, `<file>` |
+
+---
+
+## Hook Configuration
+
+Configure hooks in your project's `.claude/settings.json`.
+
+### Basic Configuration
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+      }]
+    }]
+  }
+}
+```
+
+### CLI Options for Hook Mode
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--hook` | Yes | Enable hook mode (reads JSON from stdin, outputs JSON to stdout) |
+| `--config <pattern>` | No | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
+
+### How Hook Mode Works
+
+1. Claude Code calls the hook with JSON on stdin containing `tool_name` and `tool_input`
+2. Hook extracts the agent file path from `tool_input.subagent_type`
+3. Hook reads the agent file and extracts all § references (ignoring code-fenced content)
+4. Policies are fetched and injected into the prompt via `hookSpecificOutput.updatedInput.prompt`
+5. If no policies found or agent already uses `mcp__policy-server__fetch_policies` tool, hook outputs `{"decision": "allow"}`
+
+### Agent File Format
+
+Add § references anywhere in your agent file. The hook extracts all references automatically:
+
+```markdown
+---
+name: my-agent
+description: Agent description
+---
+
+Follow §DESIGN.1 and §DESIGN.2 when working.
+All §API policies apply to this agent.
+
+Your agent instructions here...
+```
+
+**Key points:**
+- § references can appear anywhere—no special format required
+- References inside code fences are ignored (for documenting examples)
+- Prefix-only references like `§API` expand to all `§API.*` sections
+
+---
+
+## MCP Server Configuration
 
 Configure via `MCP_POLICY_CONFIG` environment variable using one of three formats:
 
@@ -12,8 +82,6 @@ Configure via `MCP_POLICY_CONFIG` environment variable using one of three format
 
 **Default:** If `MCP_POLICY_CONFIG` is not set, the server loads `./policies.json` from the working directory.
 
-## Configuration Format
-
 ### JSON Structure
 
 ```json
@@ -21,34 +89,19 @@ Configure via `MCP_POLICY_CONFIG` environment variable using one of three format
   "files": [
     "./policies/policy-*.md",
     "./policies/**/*.md"
-  ],
-  "maxChunkTokens": 10000
+  ]
 }
 ```
 
-**fields** (required)
-- Array of file paths or glob patterns
-- All files must be `.md`
-- Expanded once at startup
+| Field | Required | Description |
+|-------|----------|-------------|
+| `files` | Yes | Array of file paths or glob patterns (all must be `.md`) |
 
-**maxChunkTokens** (optional, default: 10000)
-- Large responses split at section boundaries
-- Adjust based on client timeout limits
+### Configuration Methods
 
-### Path Resolution
+#### 1. Direct Glob (Recommended)
 
-**Relative paths:**
-- JSON file: relative to `policies.json` directory
-- Direct glob/inline: relative to working directory
-- **Use absolute paths to avoid confusion**
-
-**Windows:** Use forward slashes: `C:/path/to/policies.json`
-
-## Configuration Methods
-
-### 1. Direct Glob (Recommended)
-
-Simplest approach - use glob pattern directly:
+Simplest approach—use glob pattern directly:
 
 ```json
 {
@@ -67,7 +120,7 @@ Supports multiple directories:
 }
 ```
 
-### 2. JSON File
+#### 2. JSON File
 
 For complex patterns or multiple directories:
 
@@ -90,7 +143,7 @@ For complex patterns or multiple directories:
 }
 ```
 
-### 3. Inline JSON
+#### 3. Inline JSON
 
 For testing:
 
@@ -100,6 +153,31 @@ For testing:
     "MCP_POLICY_CONFIG": "{\"files\": [\"./policies/*.md\"]}"
   }
 }
+```
+
+---
+
+## CLI Configuration
+
+The CLI uses command-line arguments for configuration.
+
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `<file>` | File to extract § references from (positional argument) |
+| `-c, --config <pattern>` | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
+| `--hook` | Enable hook mode for Claude Code integration |
+| `-a, --agents-dir <path>` | Agent files directory (hook mode only, defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
+
+### Usage Examples
+
+```bash
+# Extract policies from a file
+policy-fetch document.md --config "./policies/*.md"
+
+# Use in hook mode
+echo '{"tool_name":"Task",...}' | policy-fetch --hook --config "./policies/*.md"
 ```
 
 ## Glob Patterns

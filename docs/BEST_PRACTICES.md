@@ -2,6 +2,79 @@
 
 Patterns and strategies for using the MCP Policy Server effectively.
 
+## Choosing an Integration Method
+
+### Hook Method (Recommended for Claude Code)
+
+**Use when:**
+- Building Claude Code subagents with known policy requirements
+- Policies are determined by the agent type, not prompt content
+- You want simpler agent files without explicit tool calls
+
+**Agent file pattern:**
+```markdown
+---
+name: code-reviewer
+description: Reviews code for compliance
+---
+
+Follow §CODE.1-5 and all §API policies when reviewing.
+
+You are a code reviewer. Apply the policies above.
+```
+
+§ references can appear anywhere in the file—no special format required. References inside code fences are ignored.
+
+### MCP Server Method
+
+**Use when:**
+- Subagents need to dynamically select policies based on prompt content
+- Using MCP-compatible clients other than Claude Code
+- You need validation tools (`validate_references`, `extract_references`)
+- Policies depend on file types, languages, or other runtime factors
+
+**Agent file pattern:**
+```markdown
+---
+name: code-reviewer
+tools: mcp__policy-server__fetch_policies, Read
+---
+
+1. Analyze the code to determine languages/frameworks
+2. Fetch relevant policies:
+   - Python: `{"sections": ["§CODE-PY.1-5"]}`
+   - JavaScript: `{"sections": ["§CODE-JS.1-5"]}`
+3. Review against fetched policies
+```
+
+### CLI Method
+
+**Use when:**
+- Integrating with CI/CD pipelines
+- Building custom tooling around policies
+- Validating policy references in scripts
+- Non-MCP integrations
+
+**Example:**
+```bash
+# Validate all agent files reference existing policies
+for agent in .claude/agents/*.md; do
+  npx -p @rcrsr/mcp-policy-server policy-fetch "$agent" \
+    --config "./policies/*.md" > /dev/null || echo "Failed: $agent"
+done
+```
+
+### Combining Methods
+
+You can use multiple methods in the same project:
+- Hook for standard subagents with fixed policy requirements
+- MCP Server for advanced subagents with dynamic policy selection
+- CLI for validation and automation
+
+**Note:** The hook automatically skips injection when an agent has `mcp__policy-server__fetch_policies` in its tools list, preventing duplication.
+
+---
+
 ## Policy Organization
 
 ### File Structure
@@ -28,9 +101,9 @@ policies/
 - Hyphenated for specialization (CODE-JS, CODE-PY)
 
 **Section numbering:**
-- Sequential (§CODE.1, §CODE.2)
-- Leave gaps for future additions (1, 2, 5, 10)
-- Use subsections (§CODE.2.1, §CODE.2.2)
+- Sequential (§CODE.1, §CODE.2, §CODE.3)
+- Use subsections for related content (§CODE.2.1, §CODE.2.2)
+- Avoid renumbering existing sections to preserve references
 
 **Files:**
 - Consistent patterns: `policy-*.md`
@@ -123,16 +196,27 @@ Fetching §CODE.2 automatically includes §CODE.5 and §SEC.3.
 
 ### Subagent Instructions
 
-Make tool calls explicit:
-
+**Hook method (simpler):**
 ```markdown
-# Weak
-Review code according to standards.
+Follow §CODE.1-5 when reviewing code.
+Cite specific sections in feedback.
+```
 
-# Strong
+**MCP method (explicit tool calls):**
+```markdown
 1. Fetch §CODE.1-5 using mcp__policy-server__fetch_policies
 2. Review code against fetched standards
 3. Cite specific sections in feedback
+```
+
+**Avoid vague references:**
+```markdown
+# Weak - subagent doesn't know what standards are
+Review code according to standards.
+
+# Strong - policies are explicit
+Follow §CODE.1-5 when reviewing code.
+Cite specific sections in feedback.
 ```
 
 ### Policy Bundles
