@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.4.2 (2025-12-15)
+
+### Documentation
+
+- Fixed subagent invocation syntax in docs: `@policy-agent` → `@agent-policy-agent`
+  - Corrected examples in README.md and GETTING_STARTED.md to use proper `@agent-` prefix
+
+---
+
 ## v0.4.1 (2025-12-15)
 
 ### Bug Fixes

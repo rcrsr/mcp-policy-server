@@ -97,7 +97,7 @@ Cite specific policy sections when explaining your decisions.
 ### Step 4: Run the Subagent
 
 ```
-> @policy-agent complete the task
+> @agent-policy-agent complete the task
 ```
 
 **What happens:**
@@ -201,7 +201,7 @@ Always fetch policies FIRST before proceeding with the task.
 ### Step 5: Run the Subagent
 
 ```
-> @policy-agent complete the task
+> @agent-policy-agent complete the task
 ```
 
 **What happens:**

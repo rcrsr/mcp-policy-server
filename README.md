@@ -103,7 +103,7 @@ Apply the policies above when reviewing code.
 ### Step 3: Run the Subagent
 
 ```
-> @code-reviewer review this PR
+> @agent-code-reviewer review this PR
 ```
 
 **What happens:**
@@ -174,7 +174,7 @@ You are a code reviewer following our team standards.
 1. Restart Claude Code
 2. Accept prompts to enable the MCP server
 3. Run `/mcp` to verify "policy-server" shows "connected"
-4. Run `@code-reviewer review this file`
+4. Run `@agent-code-reviewer review this file`
 
 See [Installation Guide](docs/INSTALLATION.md) for detailed setup.
 
