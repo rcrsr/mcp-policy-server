@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.4.3 (2025-12-15)
+
+### Bug Fixes
+
+- Fixed hook JSON schema validation error in `policy-fetch` CLI
+  - Hook output used `decision` field instead of `permissionDecision`
+  - Caused "JSON validation failed: Invalid input" errors in Claude Code PreToolUse hooks
+
+---
+
 ## v0.4.2 (2025-12-15)
 
 ### Documentation

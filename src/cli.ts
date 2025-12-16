@@ -43,7 +43,7 @@ interface HookOutput {
       prompt: string;
     };
   };
-  decision?: string;
+  permissionDecision?: string;
 }
 
 /**
@@ -317,7 +317,7 @@ ${policies}
  * Output simple allow response for hooks
  */
 function outputHookAllow(): void {
-  process.stdout.write(JSON.stringify({ decision: 'allow' }));
+  process.stdout.write(JSON.stringify({ permissionDecision: 'allow' }));
 }
 
 /**
