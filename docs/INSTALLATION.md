@@ -42,7 +42,7 @@ Add to your project's `.claude/settings.json`:
       "matcher": "Task",
       "hooks": [{
         "type": "command",
-        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+        "command": "npx -p @rcrsr/mcp-policy-server policy-hook --config \"./policies/*.md\""
       }]
     }]
   }
@@ -59,7 +59,7 @@ Test the hook manually:
 
 ```bash
 echo '{"tool_name":"Task","tool_input":{"prompt":"test","subagent_type":"my-agent"}}' | \
-  npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config "./policies/*.md"
+  npx -p @rcrsr/mcp-policy-server policy-hook --config "./policies/*.md"
 ```
 
 You should see JSON output. If policies are found, they appear in `hookSpecificOutput.updatedInput.prompt`.
@@ -150,7 +150,7 @@ The CLI requires no installation—just run with `npx`.
 
 ```bash
 # Extract policies referenced in a file
-npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies document.md --config "./policies/*.md"
 ```
 
 ### Global Installation (Optional)
@@ -161,7 +161,9 @@ For frequent use, install globally:
 npm install -g @rcrsr/mcp-policy-server
 
 # Then use without npx
-policy-fetch document.md --config "./policies/*.md"
+policy-cli fetch-policies document.md --config "./policies/*.md"
+policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
+policy-cli list-sources --config "./policies/*.md"
 ```
 
 ---
@@ -201,7 +203,7 @@ Create `.mcp.json` pointing to the local build:
 
 **For Hook:**
 
-Update `.claude/settings.json` to use local CLI:
+Update `.claude/settings.json` to use local hook binary:
 
 ```json
 {
@@ -210,7 +212,7 @@ Update `.claude/settings.json` to use local CLI:
       "matcher": "Task",
       "hooks": [{
         "type": "command",
-        "command": "node /absolute/path/to/mcp-policy-server/dist/cli.js --hook --config \"./policies/*.md\""
+        "command": "node /absolute/path/to/mcp-policy-server/dist/hook.js --config \"./policies/*.md\""
       }]
     }]
   }
@@ -218,7 +220,7 @@ Update `.claude/settings.json` to use local CLI:
 ```
 
 **Important:**
-- Point to `dist/index.js` (MCP server) or `dist/cli.js` (CLI), not TypeScript source
+- Point to `dist/index.js` (MCP server), `dist/hook.js` (hook), or `dist/cli.js` (CLI)
 - Run `npm run build` after making changes
 
 ---

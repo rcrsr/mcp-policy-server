@@ -1,91 +1,40 @@
-## Quickstart
+# MCP Policy Server
 
-MCP server and CLI tool for policy documentation via § notation with automatic reference resolution, range expansion, and section validation.
+MCP server and CLI for policy documentation via § notation. Provides automatic reference resolution, range expansion, and section validation.
 
-**Three integration methods:**
-1. **Hook** (recommended for Claude Code) - Policies injected via PreToolUse hooks
-2. **MCP Server** - Subagents call `fetch_policies` tool explicitly
-3. **CLI** - Command-line policy extraction for scripts/CI
+## Commands
 
-**Build and run:**
 ```bash
-npm install
-npm run build
-npm start          # MCP server
+npm run build              # Compile TypeScript
+npm test                   # Run Jest tests
+npm start                  # Start MCP server
+npm run pre-commit:fix     # Format, lint, typecheck
 ```
 
-**Run tests:**
-```bash
-npm test
-```
-
-**Documentation:**
-- See README.md for overview and installation
-- See docs/GETTING_STARTED.md for step-by-step setup
-- See docs/CONFIGURATION_REFERENCE.md for configuration details
-- See docs/POLICY_REFERENCE.md for § notation syntax
-
-## Development Commands
-
-**Build and run:**
-- `npm run build` - Compile TypeScript to dist/
-- `npm run watch` - Recompile on file changes
-- `npm run clean` - Remove dist/, coverage/, build artifacts
-- `npm start` - Start MCP server (requires built files)
-
-**Testing:**
-- `npm test` - Run Jest test suites
-- `npm run test:coverage` - Generate coverage report
-
-**Code quality:**
-- `npm run typecheck` - Type check without compilation
-- `npm run lint` - Check code with ESLint
-- `npm run lint:fix` - Auto-fix linting issues
-- `npm run format` - Format with Prettier
-- `npm run format:check` - Verify formatting
-- `npm run pre-commit` - Run format check, lint, typecheck
-- `npm run pre-commit:fix` - Run format, lint fix, typecheck
-
-**Testing with MCP Inspector:**
-- `npx @modelcontextprotocol/inspector node dist/index.js` - Interactive testing
-
-**CLI testing:**
-- `node dist/cli.js --help` - Show CLI options
-- `node dist/cli.js --hook --config "./policies/*.md"` - Test hook mode
+**Binaries:**
+- `policy-hook` - Claude Code PreToolUse hook (reads stdin JSON, outputs hook response)
+- `policy-cli` - CLI with subcommands: fetch-policies, validate-references, extract-references, list-sources, resolve-references
 
 ## Architecture
 
 ```
 src/
-  index.ts          - MCP server, tools, response chunking, startup validation
-  cli.ts            - CLI tool for policy-fetch command (hook mode, file extraction)
-  config.ts         - Load policies.json, resolve policy directory
-  handlers.ts       - MCP tool business logic, coordinates components
-  indexer.ts        - Section indexing, file watching, duplicate detection, lazy refresh
-  parser.ts         - Parse § notation, expand ranges, extract sections, find references
-  resolver.ts       - Recursive resolution, deduplication
-  validator.ts      - Duplicate section validation from index
-  types.ts          - TypeScript type definitions
-
-tests/              - Jest test suites with fixture-based configuration
-  parser.test.ts
-  resolver.test.ts
-  validator.test.ts
-  server.test.ts
-  cli.test.ts       - CLI tool tests (hook mode, file extraction)
-
-dist/               - Compiled JavaScript output
+  index.ts    - MCP server entry, tool definitions
+  hook.ts     - Hook binary for PreToolUse integration
+  cli.ts      - CLI binary with subcommands
+  config.ts   - Configuration loading, path resolution
+  handlers.ts - Tool request handlers, chunking logic
+  indexer.ts  - Section indexing, file watching
+  parser.ts   - § notation parsing, range expansion
+  resolver.ts - Recursive reference resolution
+  validator.ts - Duplicate detection
+  types.ts    - Type definitions
 ```
 
-## Implementation Details
+## Key Behaviors
 
-**Section extraction logic:**
-- Whole sections (§DOC.4) stop at next whole section of same prefix (§DOC.5), {§END}, or EOF
+- Section extraction: whole sections (§DOC.4) stop at next same-prefix section, {§END}, or EOF
 - Subsections (§DOC.4.1) stop at any next § marker
-- Regex-based section header matching
-
-**Key behaviors:**
-- Startup validation scans for duplicate section IDs (logs warnings, doesn't block)
-- Response chunking splits at section boundaries (10000 token limit)
 - Recursive resolution follows embedded § references until exhausted
-- Parent-child deduplication (§DOC.4 supersedes §DOC.4.1)
+- Parent-child deduplication: §DOC.4 supersedes §DOC.4.1
+- Response chunking at section boundaries (10000 token limit)

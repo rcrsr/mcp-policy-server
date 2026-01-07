@@ -59,8 +59,9 @@ tools: mcp__policy-server__fetch_policies, Read
 ```bash
 # Validate all agent files reference existing policies
 for agent in .claude/agents/*.md; do
-  npx -p @rcrsr/mcp-policy-server policy-fetch "$agent" \
-    --config "./policies/*.md" > /dev/null || echo "Failed: $agent"
+  refs=$(npx -p @rcrsr/mcp-policy-server policy-cli extract-references "$agent")
+  npx -p @rcrsr/mcp-policy-server policy-cli validate-references $refs \
+    --config "./policies/*.md" || echo "Failed: $agent"
 done
 ```
 

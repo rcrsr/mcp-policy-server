@@ -2,7 +2,7 @@
 
 **Give your Claude Code subagents instant, token-efficient access to your team's standards, guidelines, and best practices.**
 
-Stop copying entire policy documents into prompts. Reference specific sections with compact § notation and let subagents fetch exactly what they need, when they need it.
+Stop copying all your task rules into prompts. Reference specific rules with compact § notation and let subagents fetch exactly what they need, when they need it.
 
 ## Why Use This?
 
@@ -26,21 +26,22 @@ Reference sections with notation like `§PREFIX.1` or `§PREFIX.2.3-5`. Policies
 - **Fast lookups**: O(1) retrieval via section indexing
 - **Per-project policies**: Same installation, different policy sets per project
 
-## Three Integration Methods
+## Setup Methods
 
 | Method | Best For | How It Works |
 |--------|----------|--------------|
-| **[Hook](#method-1-claude-code-hook-recommended)** | Claude Code subagents | Policies injected automatically via PreToolUse hook |
-| **[MCP Server](#method-2-mcp-server)** | Other MCP clients, dynamic policy selection | Subagents call `fetch_policies` tool explicitly |
-| **[CLI](#method-3-cli)** | Scripts, CI/CD, non-MCP tools | Command-line policy extraction |
+| **[Plugin](#method-1-claude-code-plugin-recommended)** | Claude Code subagents | One command install, policies injected automatically |
+| **[Hook](#method-2-claude-code-hook)** | Custom hook configuration | Manual hook setup for non-standard policy paths |
+| **[MCP Server](#method-3-mcp-server)** | Other MCP clients, dynamic policy selection | Subagents call `fetch_policies` tool explicitly |
+| **[CLI](#method-4-cli)** | Scripts, CI/CD, non-MCP tools | Command-line policy extraction |
 
-Choose **Hook** for Claude Code projects. Choose **MCP Server** when subagents need to dynamically select policies based on prompt criteria, or when using other MCP-compatible clients. Choose **CLI** for automation scripts or non-MCP integrations.
+Choose **Plugin** for Claude Code projects (simplest). Choose **Hook** if you need custom policy paths or hook behavior. Choose **MCP Server** when subagents need to dynamically select policies based on prompt criteria, or when using other MCP-compatible clients. Choose **CLI** for automation scripts or non-MCP integrations.
 
 ## Quick Start: Create a Policy File
 
 All methods require policy files with § notation. Create a policies directory and sample file:
 
-**`./policies/policy-example.md`:**
+**`.claude/policies/policy-example.md`** (for Plugin method) or **`./policies/policy-example.md`** (for other methods):
 ```markdown
 ## {§DESIGN.1} YAGNI (You Aren't Gonna Need It)
 
@@ -59,9 +60,67 @@ See also §DESIGN.1 for related principles.
 
 ---
 
-## Method 1: Claude Code Hook (Recommended)
+## Method 1: Claude Code Plugin (Recommended)
 
-Policies are injected automatically into subagent prompts via PreToolUse hooks. No MCP connection required.
+Install the policies plugin and create policy files. The plugin configures hooks automatically.
+
+### Step 1: Install the Plugin
+
+```bash
+claude plugins add rcrsr/policies
+```
+
+### Step 2: Create Policy Files
+
+Add policy files to `.claude/policies/`:
+
+**`.claude/policies/design.md`:**
+```markdown
+## {§DESIGN.1} YAGNI (You Aren't Gonna Need It)
+
+Build what you need now. Add features when needed, not in anticipation.
+
+**Guidelines:**
+- No speculative generalization
+- No placeholder code for "future features"
+- No abstraction without 3+ concrete use cases
+- Delete unused code immediately
+
+## {§DESIGN.2} Keep It Simple
+
+See also §DESIGN.1 for related principles.
+```
+
+### Step 3: Reference Policies in Subagents
+
+**`.claude/agents/code-reviewer.md`:**
+```markdown
+---
+name: code-reviewer
+description: Reviews code for compliance with standards
+---
+
+Required policies: §DESIGN.1, §DESIGN.2
+
+You are a code reviewer following our team standards.
+Apply the policies above when reviewing code.
+```
+
+### Step 4: Run the Subagent
+
+```
+> @agent-code-reviewer review this PR
+```
+
+The plugin intercepts Task tool calls, extracts § references from the agent file, and injects matching policies automatically.
+
+**Note:** References inside code fences are ignored, allowing you to document examples without triggering extraction.
+
+---
+
+## Method 2: Claude Code Hook
+
+Manual hook configuration for custom policy paths or behavior. Use this when the Plugin method's default `.claude/policies/*.md` path doesn't fit your project structure.
 
 ### Step 1: Configure the Hook
 
@@ -74,7 +133,7 @@ Add to your project's `.claude/settings.json`:
       "matcher": "Task",
       "hooks": [{
         "type": "command",
-        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+        "command": "npx -p @rcrsr/mcp-policy-server policy-hook --config \"./policies/*.md\""
       }]
     }]
   }
@@ -108,7 +167,7 @@ Apply the policies above when reviewing code.
 
 **What happens:**
 1. Hook detects Task tool call with agent file
-2. `policy-fetch` extracts all § references from agent file (§DESIGN.1, §DESIGN.2)
+2. `policy-hook` extracts all § references from agent file (§DESIGN.1, §DESIGN.2)
 3. Policies are injected into the agent prompt wrapped in `<policies>` tags
 4. Subagent receives policies automatically—no explicit tool call needed
 
@@ -126,7 +185,7 @@ This expands `§DESIGN` to all `§DESIGN.*` sections and `§API` to all `§API.*
 
 ---
 
-## Method 2: MCP Server
+## Method 3: MCP Server
 
 Subagents call `fetch_policies` tool explicitly. Use this when:
 - Subagents need to dynamically select policies based on prompt content
@@ -180,14 +239,24 @@ See [Installation Guide](docs/INSTALLATION.md) for detailed setup.
 
 ---
 
-## Method 3: CLI
+## Method 4: CLI
 
-Use `policy-fetch` directly for scripts, CI/CD, or non-MCP integrations.
+Use `policy-cli` for scripts, CI/CD, or non-MCP integrations.
+
+### Available Subcommands
+
+```bash
+policy-cli fetch-policies <file>        # Fetch policies for § refs in a file
+policy-cli validate-references <ref>... # Validate § refs exist
+policy-cli extract-references <file>    # Extract § refs from a file
+policy-cli list-sources                 # List available policy files
+policy-cli resolve-references <ref>...  # Map § refs to source files
+```
 
 ### Extract Policies from a File
 
 ```bash
-npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies document.md --config "./policies/*.md"
 ```
 
 Extracts § references from `document.md`, fetches matching policies, outputs to stdout.
@@ -196,15 +265,18 @@ Extracts § references from `document.md`, fetches matching policies, outputs to
 
 ```bash
 # Inject policies into a prompt template
-POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-fetch agent.md --config "./policies/*.md")
+POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies agent.md --config "./policies/*.md")
 echo "Follow these policies: $POLICIES" | your-llm-tool
+
+# Validate references before use
+npx -p @rcrsr/mcp-policy-server policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
 ```
 
 ---
 
 ## MCP Server Tools
 
-These tools are available when using [Method 2: MCP Server](#method-2-mcp-server).
+These tools are available when using [Method 3: MCP Server](#method-3-mcp-server).
 
 | Tool | Purpose |
 |------|---------|
@@ -228,7 +300,7 @@ These tools are available when using [Method 2: MCP Server](#method-2-mcp-server
 
 ## Documentation
 
-- [Getting Started](docs/GETTING_STARTED.md) - Step-by-step setup for all three methods
+- [Getting Started](docs/GETTING_STARTED.md) - Step-by-step setup for all four methods
 - [Installation Guide](docs/INSTALLATION.md) - Detailed installation options
 - [Configuration Reference](docs/CONFIGURATION_REFERENCE.md) - Config options for hooks, MCP, and CLI
 - [Policy Reference](docs/POLICY_REFERENCE.md) - § notation syntax

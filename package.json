@@ -1,12 +1,14 @@
 {
   "name": "@rcrsr/mcp-policy-server",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "MCP server providing token-efficient access to policy documentation via § notation",
   "main": "dist/index.js",
   "bin": {
     "@rcrsr/mcp-policy-server": "dist/index.js",
     "mcp-policy-server": "dist/index.js",
-    "policy-fetch": "dist/cli.js"
+    "policy-hook": "dist/hook.js",
+    "policy-fetch": "dist/hook.js",
+    "policy-cli": "dist/cli.js"
   },
   "repository": {
     "type": "git",

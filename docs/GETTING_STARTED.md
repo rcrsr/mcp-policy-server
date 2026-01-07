@@ -61,7 +61,7 @@ Add to your project's `.claude/settings.json`:
       "matcher": "Task",
       "hooks": [{
         "type": "command",
-        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+        "command": "npx -p @rcrsr/mcp-policy-server policy-hook --config \"./policies/*.md\""
       }]
     }]
   }
@@ -70,7 +70,7 @@ Add to your project's `.claude/settings.json`:
 
 **Configuration options:**
 - `-c, --config` - Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`)
-- `--hook` - Enables hook mode (reads JSON from stdin, outputs to stdout)
+- `-a, --agents-dir` - Agent files directory (defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`)
 
 ### Step 3: Create a Subagent with Policy References
 
@@ -102,7 +102,7 @@ Cite specific policy sections when explaining your decisions.
 
 **What happens:**
 1. Claude Code invokes the Task tool with the agent file
-2. PreToolUse hook triggers `policy-fetch --hook`
+2. PreToolUse hook triggers `policy-hook`
 3. Hook extracts all § references from the agent file (§EXAMPLE.1, §EXAMPLE.2)
 4. Policies are fetched and injected into the prompt wrapped in `<policies>` tags
 5. Subagent receives policies automatically—no explicit tool call needed
@@ -125,7 +125,7 @@ Test that the hook works:
 ```bash
 # Simulate hook input
 echo '{"tool_name":"Task","tool_input":{"prompt":"test","subagent_type":"policy-agent"}}' | \
-  npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config "./policies/*.md"
+  npx -p @rcrsr/mcp-policy-server policy-hook --config "./policies/*.md"
 ```
 
 You should see JSON output with policies in `hookSpecificOutput.updatedInput.prompt`.
@@ -242,7 +242,7 @@ Use the CLI for scripts, CI/CD pipelines, or non-MCP integrations.
 ### Extract Policies from a File
 
 ```bash
-npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
+npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies document.md --config "./policies/*.md"
 ```
 
 Extracts § references from `document.md`, fetches matching policies, outputs to stdout.
@@ -251,7 +251,7 @@ Extracts § references from `document.md`, fetches matching policies, outputs to
 
 ```bash
 # Inject policies into a prompt
-POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-fetch agent.md --config "./policies/*.md")
+POLICIES=$(npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies agent.md --config "./policies/*.md")
 echo "Follow these policies:\n$POLICIES\n\nNow complete the task..." | your-llm-tool
 ```
 
@@ -261,8 +261,8 @@ echo "Follow these policies:\n$POLICIES\n\nNow complete the task..." | your-llm-
 # GitHub Actions example
 - name: Validate policy references
   run: |
-    npx -p @rcrsr/mcp-policy-server policy-fetch .claude/agents/*.md \
-      --config "./policies/*.md" > /dev/null
+    npx -p @rcrsr/mcp-policy-server policy-cli validate-references §DOC.1 §DOC.2 \
+      --config "./policies/*.md"
 ```
 
 ---

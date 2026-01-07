@@ -8,9 +8,9 @@ The MCP Policy Server supports three integration methods, each with its own conf
 
 | Method | Configuration Location | Key Options |
 |--------|----------------------|-------------|
-| **Hook** | `.claude/settings.json` | `--config`, `--hook` |
+| **Hook** | `.claude/settings.json` | `--config` |
 | **MCP Server** | `.mcp.json` or `claude mcp add` | `MCP_POLICY_CONFIG` env var |
-| **CLI** | Command-line arguments | `--config`, `<file>` |
+| **CLI** | Command-line arguments | `--config`, `<subcommand>` |
 
 ---
 
@@ -27,19 +27,19 @@ Configure hooks in your project's `.claude/settings.json`.
       "matcher": "Task",
       "hooks": [{
         "type": "command",
-        "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \"./policies/*.md\""
+        "command": "npx -p @rcrsr/mcp-policy-server policy-hook --config \"./policies/*.md\""
       }]
     }]
   }
 }
 ```
 
-### CLI Options for Hook Mode
+### policy-hook Options
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `--hook` | Yes | Enable hook mode (reads JSON from stdin, outputs JSON to stdout) |
 | `--config <pattern>` | No | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
+| `--agents-dir <path>` | No | Agent files directory (defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
 
 ### How Hook Mode Works
 
@@ -159,25 +159,39 @@ For testing:
 
 ## CLI Configuration
 
-The CLI uses command-line arguments for configuration.
+The `policy-cli` binary provides subcommands for policy operations.
 
-### CLI Options
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `fetch-policies <file>` | Fetch policy content for § references in a file |
+| `validate-references <ref>...` | Validate that § references exist and are unique |
+| `extract-references <file>` | Extract § references from a file |
+| `list-sources` | List available policy files and prefixes |
+| `resolve-references <ref>...` | Map § references to source files |
+
+### Common Options
 
 | Option | Description |
 |--------|-------------|
-| `<file>` | File to extract § references from (positional argument) |
 | `-c, --config <pattern>` | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
-| `--hook` | Enable hook mode for Claude Code integration |
-| `-a, --agents-dir <path>` | Agent files directory (hook mode only, defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
+| `-h, --help` | Show help for command or subcommand |
 
 ### Usage Examples
 
 ```bash
-# Extract policies from a file
-policy-fetch document.md --config "./policies/*.md"
+# Fetch policies from a file
+policy-cli fetch-policies document.md --config "./policies/*.md"
 
-# Use in hook mode
-echo '{"tool_name":"Task",...}' | policy-fetch --hook --config "./policies/*.md"
+# Validate references exist
+policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
+
+# Extract references from a file
+policy-cli extract-references agent.md
+
+# List available sources
+policy-cli list-sources --config "./policies/*.md"
 ```
 
 ## Glob Patterns

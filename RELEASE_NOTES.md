@@ -1,5 +1,50 @@
 # Release Notes
 
+## v0.5.0 (2026-01-06)
+
+### ⚠️ BREAKING CHANGES
+
+CLI tool restructured into separate binaries:
+
+- **Old:** `policy-fetch <file>` for file mode, `policy-fetch --hook` for hook mode
+- **New:** `policy-cli <subcommand>` for CLI operations, `policy-hook` for hooks
+
+**Migration:**
+- File extraction: `policy-fetch doc.md` → `policy-cli fetch-policies doc.md`
+- Hook mode: `policy-fetch --hook` → `policy-hook` (or keep using `policy-fetch`)
+
+### Features
+
+- New `policy-hook` binary dedicated to Claude Code PreToolUse integration
+  - Cleaner separation of concerns from CLI tool
+  - `policy-fetch` remains as backwards-compatible alias
+- New `policy-cli` binary with subcommands:
+  - `fetch-policies <file>` - Fetch policy content for § references in a file
+  - `validate-references <ref>...` - Validate § references exist
+  - `extract-references <file>` - Extract § references from a file
+  - `list-sources` - List available policy files and prefixes
+  - `resolve-references <ref>...` - Map § references to source files
+- Documentation now recommends Plugin method as primary installation approach
+
+### Documentation
+
+- Updated README with Plugin method as recommended setup
+- Updated all docs to use new binary names (`policy-hook`, `policy-cli`)
+- Simplified CLAUDE.md
+
+### Security
+
+- Updated `qs` dependency from 6.14.0 to 6.14.1 (Dependabot)
+
+### Dependencies
+
+- `@modelcontextprotocol/sdk` 1.25.0 → 1.25.1
+- `@types/node` 25.0.2 → 25.0.3
+- `@typescript-eslint/eslint-plugin` 8.50.0 → 8.52.0
+- `@typescript-eslint/parser` 8.50.0 → 8.52.0
+
+---
+
 ## v0.4.3 (2025-12-15)
 
 ### Bug Fixes

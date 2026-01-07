@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * CLI tool to extract and fetch policy references from a file
+ * CLI binary for policy operations
  *
- * Modes:
- *   File mode:  mcp-policy-fetch <file> [--config <path>]
- *   Hook mode:  mcp-policy-fetch --hook [--config <path>] [--agents-dir <path>]
+ * Subcommands:
+ *   fetch-policies      Fetch policy content for § references
+ *   validate-references Validate § references exist and are unique
+ *   extract-references  Extract § references from a file
+ *   list-sources        List available policy files and prefixes
+ *   resolve-references  Map § references to source files
  *
- * Output:
- *   File mode: Writes fetched policy content to stdout
- *   Hook mode: Writes Claude Code hook JSON response to stdout
+ * Usage:
+ *   policy-cli <subcommand> [args] [--config <path>]
  */
 
 import * as fs from 'fs';
@@ -16,35 +18,31 @@ import * as path from 'path';
 import { loadConfig, ServerConfig } from './config.js';
 import { expandSectionsWithIndex } from './handlers.js';
 import { buildSectionIndex } from './indexer.js';
-import { findEmbeddedReferences } from './parser.js';
-import { fetchSectionsWithIndex } from './resolver.js';
+import { findEmbeddedReferences, expandRange } from './parser.js';
+import { fetchSectionsWithIndex, resolveSectionLocationsWithIndex } from './resolver.js';
+import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { SectionNotation, SectionIndex } from './types.js';
 
+type Subcommand =
+  | 'fetch-policies'
+  | 'validate-references'
+  | 'extract-references'
+  | 'list-sources'
+  | 'resolve-references';
+
 interface ParsedArgs {
-  mode: 'file' | 'hook';
-  inputFile?: string;
+  subcommand: Subcommand | null;
+  args: string[];
   configPath?: string;
-  agentsDir?: string;
 }
 
-interface HookInput {
-  tool_input?: {
-    subagent_type?: string;
-    prompt?: string;
-  };
-}
-
-interface HookOutput {
-  hookSpecificOutput?: {
-    hookEventName: string;
-    permissionDecision: string;
-    updatedInput?: {
-      subagent_type?: string;
-      prompt: string;
-    };
-  };
-  permissionDecision?: string;
-}
+const SUBCOMMANDS: Subcommand[] = [
+  'fetch-policies',
+  'validate-references',
+  'extract-references',
+  'list-sources',
+  'resolve-references',
+];
 
 /**
  * Parse command line arguments
@@ -52,349 +50,373 @@ interface HookOutput {
 function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
 
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     printUsage();
-    process.exit(0);
+    process.exit(args.length === 0 ? 1 : 0);
   }
 
-  const isHookMode = args.includes('--hook');
+  // First non-option argument should be the subcommand
+  const subcommandArg = args[0];
+  if (!SUBCOMMANDS.includes(subcommandArg as Subcommand)) {
+    console.error(`Error: Unknown subcommand: ${subcommandArg}`);
+    console.error(`Available subcommands: ${SUBCOMMANDS.join(', ')}`);
+    process.exit(1);
+  }
 
-  let inputFile: string | undefined;
+  const subcommand = subcommandArg as Subcommand;
+  const remainingArgs = args.slice(1);
+
   let configPath: string | undefined;
-  let agentsDir: string | undefined;
+  const positionalArgs: string[] = [];
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  for (let i = 0; i < remainingArgs.length; i++) {
+    const arg = remainingArgs[i];
 
-    if (arg === '--hook') {
-      continue;
-    } else if (arg === '--config' || arg === '-c') {
-      configPath = args[++i];
+    if (arg === '--config' || arg === '-c') {
+      configPath = remainingArgs[++i];
       if (!configPath) {
         console.error('Error: --config requires a path argument');
         process.exit(1);
       }
-    } else if (arg === '--agents-dir' || arg === '-a') {
-      agentsDir = args[++i];
-      if (!agentsDir) {
-        console.error('Error: --agents-dir requires a path argument');
-        process.exit(1);
-      }
-    } else if (!arg.startsWith('-')) {
-      inputFile = arg;
-    } else {
+    } else if (arg === '--help' || arg === '-h') {
+      printSubcommandUsage(subcommand);
+      process.exit(0);
+    } else if (arg.startsWith('-')) {
       console.error(`Error: Unknown option: ${arg}`);
-      printUsage();
       process.exit(1);
+    } else {
+      positionalArgs.push(arg);
     }
   }
 
-  if (isHookMode) {
-    return { mode: 'hook', configPath, agentsDir };
-  }
-
-  if (!inputFile) {
-    console.error('Error: Input file required (or use --hook mode)');
-    printUsage();
-    process.exit(1);
-  }
-
-  return { mode: 'file', inputFile, configPath };
+  return { subcommand, args: positionalArgs, configPath };
 }
 
 /**
- * Print usage information to stderr
+ * Print main usage information
  */
 function printUsage(): void {
   console.error(`
-Usage: policy-fetch <file> [options]
-       policy-fetch --hook [options]
+Usage: policy-cli <subcommand> [args] [options]
 
-Extract § references from a file and fetch the referenced policy content.
+CLI for policy documentation operations.
 
-Modes:
-  <file>              File mode: scan file for § references
-  --hook              Hook mode: read Claude Code hook JSON from stdin
+Subcommands:
+  fetch-policies      Fetch policy content for § references from a file
+  validate-references Validate that § references exist and are unique
+  extract-references  Extract § references from a file
+  list-sources        List available policy files and section prefixes
+  resolve-references  Map § references to their source files
 
 Options:
-  -c, --config <path>     Path to policies.json or glob pattern
-                          (defaults to MCP_POLICY_CONFIG env var or ./policies.json)
-  -a, --agents-dir <path> Agent files directory (hook mode only)
-                          (defaults to $CLAUDE_PROJECT_DIR/.claude/agents)
-  -h, --help              Show this help message
+  -c, --config <path>  Path to policies.json or glob pattern
+                       (defaults to MCP_POLICY_CONFIG env var or ./policies.json)
+  -h, --help           Show help (use after subcommand for subcommand help)
 
 Examples:
-  # File mode
-  npx -p @rcrsr/mcp-policy-server policy-fetch document.md
-  npx -p @rcrsr/mcp-policy-server policy-fetch document.md --config "./policies/*.md"
-
-  # Hook mode (for Claude Code PreToolUse hooks)
-  npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config "./policies/*.md"
-
-Hook Configuration (cross-platform):
-  {
-    "hooks": {
-      "PreToolUse": [{
-        "matcher": "Task",
-        "hooks": [{
-          "type": "command",
-          "command": "npx -p @rcrsr/mcp-policy-server policy-fetch --hook --config \\"./policies/*.md\\""
-        }]
-      }]
-    }
-  }
+  policy-cli fetch-policies document.md --config "./policies/*.md"
+  policy-cli validate-references §DOC.1 §DOC.2
+  policy-cli extract-references agent.md
+  policy-cli list-sources
+  policy-cli resolve-references §DOC.1 §DOC.2
 `);
 }
 
 /**
- * Read all stdin as string
+ * Print subcommand-specific usage
  */
-async function readStdin(): Promise<string> {
-  return new Promise((resolve) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => (data += chunk));
-    process.stdin.on('end', () => resolve(data));
-  });
+function printSubcommandUsage(subcommand: Subcommand): void {
+  const usageMap: Record<Subcommand, string> = {
+    'fetch-policies': `
+Usage: policy-cli fetch-policies <file> [options]
+
+Fetch policy content for § references found in a file.
+
+Arguments:
+  <file>  File to extract § references from
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern
+  -h, --help           Show this help
+
+Example:
+  policy-cli fetch-policies agent.md --config "./policies/*.md"
+`,
+    'validate-references': `
+Usage: policy-cli validate-references <ref>... [options]
+
+Validate that § references exist and are unique in policy files.
+
+Arguments:
+  <ref>...  One or more § references to validate (e.g., §DOC.1 §DOC.2)
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern
+  -h, --help           Show this help
+
+Example:
+  policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
+`,
+    'extract-references': `
+Usage: policy-cli extract-references <file> [options]
+
+Extract all § references from a file.
+
+Arguments:
+  <file>  File to scan for § references
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern (not required)
+  -h, --help           Show this help
+
+Example:
+  policy-cli extract-references agent.md
+`,
+    'list-sources': `
+Usage: policy-cli list-sources [options]
+
+List all available policy files and their section prefixes.
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern
+  -h, --help           Show this help
+
+Example:
+  policy-cli list-sources --config "./policies/*.md"
+`,
+    'resolve-references': `
+Usage: policy-cli resolve-references <ref>... [options]
+
+Map § references to their source files (without fetching content).
+
+Arguments:
+  <ref>...  One or more § references to resolve (e.g., §DOC.1 §DOC.2)
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern
+  -h, --help           Show this help
+
+Example:
+  policy-cli resolve-references §DOC.1 §DOC.2 --config "./policies/*.md"
+`,
+  };
+
+  console.error(usageMap[subcommand]);
 }
 
 /**
- * Check if agent file has MCP policy tool in frontmatter
- * Agents with this tool should fetch policies themselves
- *
- * Matches both direct and plugin-namespaced tools:
- * - mcp__policy-server__fetch_policies
- * - mcp__plugin_xyz_policy-server__fetch_policies
+ * Load config and build index, with error handling
  */
-export function agentHasPolicyTool(content: string): boolean {
-  // Check for YAML frontmatter
-  if (!content.startsWith('---')) {
-    return false;
-  }
-
-  const endIndex = content.indexOf('---', 3);
-  if (endIndex === -1) {
-    return false;
-  }
-
-  const frontmatter = content.slice(3, endIndex);
-
-  // Look for tools line containing policy-server__fetch_policies
-  // Handles both mcp__policy-server__ and mcp__plugin_*_policy-server__
-  const toolsMatch = frontmatter.match(/^tools:\s*(.+)$/m);
-  if (!toolsMatch) {
-    return false;
-  }
-
-  return /mcp__(?:\w+_)*policy-server__fetch_policies/.test(toolsMatch[1]);
+function loadConfigAndIndex(configPath?: string): { config: ServerConfig; index: SectionIndex } {
+  const config = loadConfig(configPath);
+  const index = buildSectionIndex(config);
+  return { config, index };
 }
 
 /**
- * Fetch policies from a file, returning empty string if none found
+ * Handle fetch-policies subcommand
  */
-function fetchPoliciesFromFile(
-  filePath: string,
-  config: ServerConfig,
-  index: SectionIndex
-): string {
+function handleFetchPolicies(args: string[], configPath?: string): void {
+  if (args.length === 0) {
+    console.error('Error: fetch-policies requires a file argument');
+    printSubcommandUsage('fetch-policies');
+    process.exit(1);
+  }
+
+  const filePath = path.isAbsolute(args[0]) ? args[0] : path.resolve(process.cwd(), args[0]);
+
   if (!fs.existsSync(filePath)) {
-    return '';
+    console.error(`Error: File not found: ${filePath}`);
+    process.exit(1);
   }
 
   const content = fs.readFileSync(filePath, 'utf8');
   const references = findEmbeddedReferences(content);
 
   if (references.length === 0) {
-    return '';
-  }
-
-  try {
-    const expandedRefs = expandSectionsWithIndex(references, index);
-    const uniqueRefs = Array.from(new Set(expandedRefs)).sort() as SectionNotation[];
-    return fetchSectionsWithIndex(uniqueRefs, index, config.baseDir);
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Run in hook mode: read JSON from stdin, modify prompt, output hook response
- */
-async function runHookMode(configPath?: string, agentsDir?: string): Promise<void> {
-  // Determine agents directory
-  const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-  const resolvedAgentsDir = agentsDir
-    ? path.isAbsolute(agentsDir)
-      ? agentsDir
-      : path.resolve(projectDir, agentsDir)
-    : path.join(projectDir, '.claude', 'agents');
-
-  // Read and parse stdin
-  const stdinData = await readStdin();
-  let input: HookInput;
-  try {
-    input = JSON.parse(stdinData);
-  } catch {
-    // Invalid JSON, just allow
-    outputHookAllow();
-    return;
-  }
-
-  // Extract subagent type and prompt
-  const subagentType = input.tool_input?.subagent_type;
-  const prompt = input.tool_input?.prompt;
-
-  if (!subagentType || !prompt) {
-    outputHookAllow();
-    return;
-  }
-
-  // Find agent file
-  const agentPath = path.join(resolvedAgentsDir, `${subagentType}.md`);
-  if (!fs.existsSync(agentPath)) {
-    outputHookAllow();
-    return;
-  }
-
-  // Read agent file content
-  const agentContent = fs.readFileSync(agentPath, 'utf8');
-
-  // Skip injection if agent has MCP policy tool - it will fetch policies itself
-  if (agentHasPolicyTool(agentContent)) {
-    outputHookAllow();
-    return;
-  }
-
-  // Suppress info logging
-  const originalConsoleError = console.error;
-  console.error = (): void => {};
-
-  // Load config and build index
-  let config: ServerConfig;
-  let index: SectionIndex;
-  try {
-    config = loadConfig(configPath);
-    index = buildSectionIndex(config);
-  } catch {
-    console.error = originalConsoleError;
-    outputHookAllow();
-    return;
-  }
-
-  console.error = originalConsoleError;
-
-  // Fetch policies from agent file
-  const policies = fetchPoliciesFromFile(agentPath, config, index);
-
-  if (!policies) {
-    outputHookAllow();
-    return;
-  }
-
-  // Build modified prompt
-  const newPrompt = `${prompt}
-
-<policies>
-${policies}
-</policies>`;
-
-  // Output hook response with modified prompt
-  const output: HookOutput = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-      updatedInput: {
-        ...input.tool_input,
-        prompt: newPrompt,
-      },
-    },
-  };
-
-  process.stdout.write(JSON.stringify(output));
-}
-
-/**
- * Output simple allow response for hooks
- */
-function outputHookAllow(): void {
-  process.stdout.write(JSON.stringify({ permissionDecision: 'allow' }));
-}
-
-/**
- * Run in file mode: read file, extract refs, output policies
- */
-async function runFileMode(inputFile: string, configPath?: string): Promise<void> {
-  // Resolve input file path
-  const resolvedInputFile = path.isAbsolute(inputFile)
-    ? inputFile
-    : path.resolve(process.cwd(), inputFile);
-
-  if (!fs.existsSync(resolvedInputFile)) {
-    console.error(`Error: Input file not found: ${resolvedInputFile}`);
-    process.exit(1);
-  }
-
-  // Suppress info logging
-  const originalConsoleError = console.error;
-  console.error = (): void => {};
-
-  let config: ServerConfig;
-  try {
-    config = loadConfig(configPath);
-  } catch (error) {
-    console.error = originalConsoleError;
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
-
-  const index = buildSectionIndex(config);
-  console.error = originalConsoleError;
-
-  // Read and process file
-  const content = fs.readFileSync(resolvedInputFile, 'utf8');
-  const references = findEmbeddedReferences(content);
-
-  if (references.length === 0) {
+    // No references found, exit silently
     process.exit(0);
   }
 
-  // Expand and fetch
+  const { config, index } = loadConfigAndIndex(configPath);
+
   const expandedRefs = expandSectionsWithIndex(references, index);
   const uniqueRefs = Array.from(new Set(expandedRefs)).sort() as SectionNotation[];
 
-  try {
-    const result = fetchSectionsWithIndex(uniqueRefs, index, config.baseDir);
-    process.stdout.write(result);
-  } catch (error) {
-    console.error(
-      `Error fetching policies: ${error instanceof Error ? error.message : String(error)}`
-    );
+  const result = fetchSectionsWithIndex(uniqueRefs, index, config.baseDir);
+  process.stdout.write(result);
+}
+
+/**
+ * Handle validate-references subcommand
+ */
+function handleValidateReferences(args: string[], configPath?: string): void {
+  if (args.length === 0) {
+    console.error('Error: validate-references requires at least one § reference');
+    printSubcommandUsage('validate-references');
     process.exit(1);
   }
+
+  const { index } = loadConfigAndIndex(configPath);
+
+  // Validate global index first
+  const globalValidation = validateFromIndex(index);
+
+  const result = {
+    valid: true,
+    checked: args.length,
+    invalid: [] as string[],
+    details: [] as string[],
+  };
+
+  if (!globalValidation.valid) {
+    result.valid = false;
+    result.details.push('Global validation errors:');
+    result.details.push(formatDuplicateErrors(globalValidation.errors ?? []));
+  }
+
+  // Expand and check each reference
+  const expandedRefs = expandSectionsWithIndex(args, index);
+  for (const ref of expandedRefs) {
+    if (index.duplicates.has(ref)) {
+      result.valid = false;
+      result.invalid.push(ref);
+      const files = index.duplicates.get(ref)!;
+      result.details.push(`${ref}: Found in multiple files:\n${files.map((f) => `  - ${f}`).join('\n')}`);
+      continue;
+    }
+
+    if (!index.sectionMap.has(ref)) {
+      result.valid = false;
+      result.invalid.push(ref);
+      result.details.push(`${ref}: Section not found in policy files`);
+    }
+  }
+
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(result.valid ? 0 : 1);
+}
+
+/**
+ * Handle extract-references subcommand
+ */
+function handleExtractReferences(args: string[]): void {
+  if (args.length === 0) {
+    console.error('Error: extract-references requires a file argument');
+    printSubcommandUsage('extract-references');
+    process.exit(1);
+  }
+
+  const filePath = path.isAbsolute(args[0]) ? args[0] : path.resolve(process.cwd(), args[0]);
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`Error: File not found: ${filePath}`);
+    process.exit(1);
+  }
+
+  const content = fs.readFileSync(filePath, 'utf8');
+  const references = findEmbeddedReferences(content);
+
+  // Expand ranges
+  const expandedRefs = references.flatMap((ref: string) => expandRange(ref));
+  const uniqueRefs = Array.from(new Set(expandedRefs)).sort();
+
+  console.log(JSON.stringify(uniqueRefs, null, 2));
+}
+
+/**
+ * Handle list-sources subcommand
+ */
+function handleListSources(configPath?: string): void {
+  const { config, index } = loadConfigAndIndex(configPath);
+
+  const output = `# Policy Documentation Files
+
+${config.files.map((file) => `- ${file}`).join('\n')}
+
+## Index Statistics
+
+- Files indexed: ${index.fileCount}
+- Sections indexed: ${index.sectionCount}
+- Duplicate sections: ${index.duplicates.size}
+- Last indexed: ${index.lastIndexed.toISOString()}
+
+## Available Prefixes
+
+${Array.from(
+  new Set(
+    Array.from(index.sectionMap.keys())
+      .map((s) => s.match(/^§([A-Z-]+)\./)?.[1])
+      .filter(Boolean)
+  )
+)
+  .sort()
+  .map((p) => `- §${p}`)
+  .join('\n')}
+`;
+
+  console.log(output);
+}
+
+/**
+ * Handle resolve-references subcommand
+ */
+function handleResolveReferences(args: string[], configPath?: string): void {
+  if (args.length === 0) {
+    console.error('Error: resolve-references requires at least one § reference');
+    printSubcommandUsage('resolve-references');
+    process.exit(1);
+  }
+
+  const { config, index } = loadConfigAndIndex(configPath);
+
+  const expandedRefs = expandSectionsWithIndex(args, index);
+  const locations = resolveSectionLocationsWithIndex(expandedRefs, index, config.baseDir);
+
+  console.log(JSON.stringify(locations, null, 2));
 }
 
 /**
  * Main entry point
  */
-async function main(): Promise<void> {
-  const args = parseArgs();
+function main(): void {
+  const { subcommand, args, configPath } = parseArgs();
 
-  if (args.mode === 'hook') {
-    await runHookMode(args.configPath, args.agentsDir);
-  } else {
-    await runFileMode(args.inputFile!, args.configPath);
+  if (!subcommand) {
+    printUsage();
+    process.exit(1);
+  }
+
+  try {
+    switch (subcommand) {
+      case 'fetch-policies':
+        handleFetchPolicies(args, configPath);
+        break;
+      case 'validate-references':
+        handleValidateReferences(args, configPath);
+        break;
+      case 'extract-references':
+        handleExtractReferences(args);
+        break;
+      case 'list-sources':
+        handleListSources(configPath);
+        break;
+      case 'resolve-references':
+        handleResolveReferences(args, configPath);
+        break;
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
   }
 }
 
-// Only run main when executed directly, not when imported for testing
+// Only run main when executed directly
 const isDirectRun =
   process.argv[1]?.endsWith('cli.js') ||
   process.argv[1]?.endsWith('cli.ts') ||
-  process.argv[1]?.endsWith('policy-fetch');
+  process.argv[1]?.endsWith('policy-cli');
 
 if (isDirectRun) {
-  main().catch((error) => {
-    console.error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  });
+  main();
 }
