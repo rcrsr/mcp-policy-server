@@ -1,17 +1,18 @@
 # Installation Guide
 
-This guide covers installing the MCP Policy Server for all three integration methods.
+This guide covers installing the MCP Policy Server for all four integration methods.
 
 ## Prerequisites
 
 - Node.js 18 or later
-- Claude Code (for Hook and MCP methods) or other MCP-compatible client
+- Claude Code (for Plugin, Hook, and MCP methods) or other MCP-compatible client
 
 ## Choose Your Method
 
 | Method | When to Use | What to Install |
 |--------|-------------|-----------------|
-| **[Hook](#hook-installation)** | Claude Code subagents (recommended) | Configure `.claude/settings.json` |
+| **[Plugin](#plugin-installation)** | Claude Code subagents (recommended) | One command install |
+| **[Hook](#hook-installation)** | Custom policy paths or hook behavior | Configure `.claude/settings.json` |
 | **[MCP Server](#mcp-server-installation)** | Dynamic policy selection, other MCP clients | Configure `.mcp.json` or use `claude mcp add` |
 | **[CLI](#cli-installation)** | Scripts, CI/CD, non-MCP tools | Just run with `npx` |
 
@@ -19,9 +20,45 @@ All methods use the same npm package: `@rcrsr/mcp-policy-server`
 
 ---
 
+## Plugin Installation
+
+The plugin method installs via Claude Code's plugin system and configures hooks automatically.
+
+### Step 1: Add the Marketplace
+
+Inside Claude Code, run:
+
+```
+/plugin marketplace add rcrsr/claude-plugins
+```
+
+### Step 2: Install the Plugin
+
+```
+/plugin install policies@rcrsr
+```
+
+### Step 3: Create Your Policies Directory
+
+```bash
+mkdir -p .claude/policies
+```
+
+Add policy files with § notation (see [Getting Started](GETTING_STARTED.md#step-1-create-policy-files)).
+
+### Step 4: Restart Claude Code
+
+Restart Claude Code to load the plugin configuration.
+
+### Verify Installation
+
+Run `/plugin` to check plugin status. The "policies" plugin should show as installed.
+
+---
+
 ## Hook Installation
 
-The hook method injects policies automatically into subagent prompts via Claude Code's PreToolUse hooks.
+Manual hook configuration for custom policy paths or behavior. Use this when the Plugin method's default `.claude/policies/*.md` path doesn't fit your project structure.
 
 ### Step 1: Create Your Policies Directory
 
@@ -227,7 +264,8 @@ Update `.claude/settings.json` to use local hook binary:
 
 ## Configuration Notes
 
-- `MCP_POLICY_CONFIG`: Glob pattern or path to policy files
+- **Plugin method**: Uses `.claude/policies/*.md` by default
+- **Hook/MCP/CLI methods**: Set `MCP_POLICY_CONFIG` or `--config` to your policy path
 - Glob patterns recommended: `./policies/*.md`, `./policies/**/*.md`
 - Windows: Use forward slashes in JSON paths
 - Restart Claude Code after configuration changes

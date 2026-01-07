@@ -66,9 +66,19 @@ Install the policies plugin and create policy files. The plugin configures hooks
 
 ### Step 1: Install the Plugin
 
-```bash
-claude plugins add rcrsr/policies
+Inside Claude Code, run this once:
+
 ```
+/plugin marketplace add rcrsr/claude-plugins
+```
+
+Then install the policies plugin:
+
+```
+/plugin install policies@rcrsr
+```
+
+The policies files should be placed in `.claude/policies/` within your project directory.
 
 ### Step 2: Create Policy Files
 

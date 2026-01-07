@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.5.2 (2026-01-06)
+
+### Documentation
+
+- Added Plugin method to all documentation as the recommended installation approach
+  - INSTALLATION.md: Added Plugin Installation section, updated method table
+  - GETTING_STARTED.md: Added Plugin Setup section with step-by-step guide
+  - CONFIGURATION_REFERENCE.md: Added Plugin Configuration section
+- Updated Hook method description across all docs to clarify it's for custom policy paths
+- Added Plugin troubleshooting sections to all relevant docs
+- Consistent four-method structure (Plugin, Hook, MCP Server, CLI) across all documentation
+
+---
+
 ## v0.5.1 (2026-01-06)
 
 ### Bug Fixes

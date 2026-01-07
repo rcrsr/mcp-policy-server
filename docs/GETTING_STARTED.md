@@ -6,11 +6,12 @@ This guide walks you through setting up the Policy Server from scratch. You'll c
 
 | Method | Best For | Setup Complexity |
 |--------|----------|------------------|
-| **[Hook](#hook-setup-recommended-for-claude-code)** | Claude Code subagents | Simple - just configure `.claude/settings.json` |
+| **[Plugin](#plugin-setup-recommended-for-claude-code)** | Claude Code subagents | Simple - one command install |
+| **[Hook](#hook-setup)** | Custom policy paths or hook behavior | Simple - configure `.claude/settings.json` |
 | **[MCP Server](#mcp-server-setup)** | Dynamic policy selection, other MCP clients | Medium - requires MCP server configuration |
 | **[CLI](#cli-setup)** | Scripts, CI/CD, non-MCP tools | Simple - command-line only |
 
-**Recommendation:** Start with the Hook method for Claude Code projects. Switch to MCP Server only if you need dynamic policy selection based on prompt content.
+**Recommendation:** Start with the Plugin method for Claude Code projects. Use Hook if you need custom policy paths. Switch to MCP Server only if you need dynamic policy selection based on prompt content.
 
 ---
 
@@ -18,7 +19,7 @@ This guide walks you through setting up the Policy Server from scratch. You'll c
 
 All methods require policy files with § notation. Create your first policy file:
 
-**`policies/policy-example.md`:**
+**`.claude/policies/policy-example.md`** (for Plugin method) or **`./policies/policy-example.md`** (for other methods):
 ```markdown
 # Example Policy Document
 
@@ -46,9 +47,70 @@ Refer back to §EXAMPLE.1 for context.
 
 ---
 
-## Hook Setup (Recommended for Claude Code)
+## Plugin Setup (Recommended for Claude Code)
 
-The hook method injects policies automatically into subagent prompts. No MCP connection required.
+The plugin method installs via Claude Code's plugin system. Hooks are configured automatically.
+
+### Step 2: Install the Plugin
+
+Inside Claude Code, add the marketplace and install the plugin:
+
+```
+/plugin marketplace add rcrsr/claude-plugins
+/plugin install policies@rcrsr
+```
+
+### Step 3: Create a Subagent with Policy References
+
+Add § references anywhere in your agent file. The plugin extracts all references automatically.
+
+**`.claude/agents/policy-agent.md`:**
+```markdown
+---
+name: policy-agent
+description: Example agent that uses policy sections
+---
+
+Follow §EXAMPLE.1 and §EXAMPLE.2 when completing tasks.
+
+You are an agent that follows team policies.
+Cite specific policy sections when explaining your decisions.
+```
+
+**Key points:**
+- § references can appear anywhere in the file—no special format required
+- References inside code fences are ignored (for documenting examples)
+- The plugin extracts all § references and injects the policy content
+
+### Step 4: Run the Subagent
+
+```
+> @agent-policy-agent complete the task
+```
+
+**What happens:**
+1. Claude Code invokes the Task tool with the agent file
+2. PreToolUse hook triggers the policy hook
+3. Hook extracts all § references from the agent file (§EXAMPLE.1, §EXAMPLE.2)
+4. Policies are fetched and injected into the prompt wrapped in `<policies>` tags
+5. Subagent receives policies automatically—no explicit tool call needed
+6. §EXAMPLE.3 (referenced from §EXAMPLE.2) is included automatically
+
+### Step 5: Use Prefix-Only References
+
+Fetch all sections with a given prefix using prefix-only notation:
+
+```markdown
+Follow all §EXAMPLE and §OTHER policies.
+```
+
+This expands `§EXAMPLE` to all `§EXAMPLE.*` sections and `§OTHER` to all `§OTHER.*` sections. Useful for fetching entire policy categories.
+
+---
+
+## Hook Setup
+
+Manual hook configuration for custom policy paths or behavior. Use this when the Plugin method's default `.claude/policies/*.md` path doesn't fit your project structure.
 
 ### Step 2: Configure the Hook
 
@@ -324,6 +386,11 @@ See [Policy Reference](POLICY_REFERENCE.md) for complete § notation syntax.
 ---
 
 ## Troubleshooting
+
+### Plugin Issues
+- **Plugin not found**: Run `/plugin marketplace add rcrsr/claude-plugins` first
+- **Policies not injected**: Verify policy files exist in `.claude/policies/`
+- **Plugin not loading**: Restart Claude Code after installation
 
 ### Hook Issues
 - **Policies not injected**: Verify `.claude/settings.json` syntax and hook configuration
