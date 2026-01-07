@@ -2,7 +2,7 @@
 
 **Give your Claude Code subagents instant, token-efficient access to your team's standards, guidelines, and best practices.**
 
-Stop copying all your task rules into prompts. Reference specific rules with compact § notation and let subagents fetch exactly what they need, when they need it.
+Stop polluting your context by putting all your agent guidelines into CLAUDE.md or each subagent definition. Reference specific rules with compact § notation and let subagents fetch exactly what they need, when they need it.
 
 ## Why Use This?
 
@@ -11,7 +11,7 @@ Stop copying all your task rules into prompts. Reference specific rules with com
 Teams document standards in markdown files (coding guidelines, architecture principles, deployment procedures). When you want Claude Code subagents to follow these standards, you're stuck with imperfect options:
 
 - **Put everything in memory like CLAUDE.md or rules files**: Signal loss, high token costs due to implicit context that may not be needed for all tasks
-- **Reference entire documents**: Wastes tokens, hits context limits
+- **Reference entire documents**: Unreliable, wastes tokens, hits context limits
 - **Maintain each subagent separately**: Unnecessary duplication, hard to keep consistent
 
 ### The Solution
