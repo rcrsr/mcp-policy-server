@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.1 (2026-01-06)
+
+### Bug Fixes
+
+- Fixed test import path in `cli.test.ts`
+  - Test file imported `agentHasPolicyTool` from `src/cli` instead of `src/hook`
+  - Caused TypeScript compilation error during test run
+
+---
+
 ## v0.5.0 (2026-01-06)
 
 ### ⚠️ BREAKING CHANGES

@@ -1,4 +1,4 @@
-import { agentHasPolicyTool } from '../src/cli';
+import { agentHasPolicyTool } from '../src/hook';
 
 describe('agentHasPolicyTool', () => {
   it('should return true for direct MCP policy tool', () => {
