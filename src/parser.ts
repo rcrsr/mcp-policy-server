@@ -14,7 +14,8 @@ const SECTION_ID_PATTERN =
 const FULL_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)\.(\d+)-\2\.(\d+)$/;
 const SHORT_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)\.(\d+)-(\d+)$/;
 const WHOLE_SECTION_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+)-(\d+)$/;
-const SECTION_MARKER_PATTERN = /\{§/;
+// Only match actual section headers, not inline references
+const SECTION_MARKER_PATTERN = /^##?#? \{§/;
 
 /**
  * Pattern for prefix-only notation (§PREFIX without section number)
@@ -222,6 +223,7 @@ export function extractSection(filePath: string, prefix: string, sectionNum: str
  *
  * Scans line array for start pattern, collects lines until stop pattern
  * encountered or EOF reached. Start line is included in output.
+ * Ignores stop patterns inside fenced code blocks.
  *
  * @param lines - Array of file lines to scan
  * @param startPattern - Regex matching section start
@@ -232,6 +234,7 @@ export function extractSection(filePath: string, prefix: string, sectionNum: str
  */
 function extractRange(lines: string[], startPattern: RegExp, stopPattern: RegExp): string {
   let inRange = false;
+  let inCodeBlock = false;
   const extracted: string[] = [];
 
   for (const line of lines) {
@@ -242,7 +245,13 @@ function extractRange(lines: string[], startPattern: RegExp, stopPattern: RegExp
     }
 
     if (inRange) {
-      if (stopPattern.test(line)) {
+      // Track code block state - toggle on fence markers
+      if (/^```/.test(line)) {
+        inCodeBlock = !inCodeBlock;
+      }
+
+      // Only stop on pattern if not inside a code block
+      if (!inCodeBlock && stopPattern.test(line)) {
         break;
       }
       extracted.push(line);

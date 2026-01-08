@@ -108,8 +108,9 @@ function resolveSectionWithContent(section: SectionNotation, index: SectionIndex
  * @param initialSections - Starting section notations (may include ranges)
  * @param index - Section index with prebuilt mappings
  * @param baseDir - Base directory for policy files
+ * @param options - Optional settings: lenient mode skips unresolvable sections
  * @returns Map of section notation to gathered section data
- * @throws {Error} When section not found or is duplicate
+ * @throws {Error} When section not found or is duplicate (unless lenient mode)
  *
  * @example
  * ```typescript
@@ -128,11 +129,20 @@ function resolveSectionWithContent(section: SectionNotation, index: SectionIndex
  * // Returns: Map with only §APP.4 (parent supersedes child)
  * ```
  */
+export interface GatherOptions {
+  /** Skip unresolvable sections instead of throwing (for hook mode) */
+  lenient?: boolean;
+  /** Callback for warnings in lenient mode */
+  onWarning?: (message: string) => void;
+}
+
 export function gatherSectionsWithIndex(
   initialSections: string[],
   index: SectionIndex,
-  baseDir: string
+  baseDir: string,
+  options?: GatherOptions
 ): Map<string, GatheredSection> {
+  const { lenient = false, onWarning } = options ?? {};
   const gathered = new Map<string, GatheredSection>();
   const queue: Array<{ notation: string; referredBy: string | null }> = initialSections.map(
     (n) => ({
@@ -179,9 +189,12 @@ export function gatherSectionsWithIndex(
       parsed = parseSectionNotation(notation);
     } catch (error) {
       const refContext = referredBy ? ` (referenced by ${referredBy})` : '';
-      throw new Error(
-        `Invalid section notation "${notation}"${refContext}: ${error instanceof Error ? error.message : String(error)}`
-      );
+      const message = `Invalid section notation "${notation}"${refContext}: ${error instanceof Error ? error.message : String(error)}`;
+      if (lenient) {
+        onWarning?.(message);
+        continue;
+      }
+      throw new Error(message);
     }
 
     // Resolve section using index and extract content
@@ -193,9 +206,12 @@ export function gatherSectionsWithIndex(
       content = resolveSectionWithContent(notation as SectionNotation, index);
     } catch (error) {
       const refContext = referredBy ? ` (referenced by ${referredBy})` : '';
-      throw new Error(
-        `Failed to resolve section "${notation}"${refContext}: ${error instanceof Error ? error.message : String(error)}`
-      );
+      const message = `Failed to resolve section "${notation}"${refContext}: ${error instanceof Error ? error.message : String(error)}`;
+      if (lenient) {
+        onWarning?.(message);
+        continue;
+      }
+      throw new Error(message);
     }
 
     // Extract relative file name from absolute path for backward compatibility
@@ -265,9 +281,10 @@ export function gatherSectionsWithIndex(
 export function fetchSectionsWithIndex(
   sections: string[],
   index: SectionIndex,
-  baseDir: string
+  baseDir: string,
+  options?: GatherOptions
 ): string {
-  const gathered = gatherSectionsWithIndex(sections, index, baseDir);
+  const gathered = gatherSectionsWithIndex(sections, index, baseDir, options);
 
   const sortedNotations = sortSections(Array.from(gathered.keys()) as SectionNotation[]);
 

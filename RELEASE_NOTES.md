@@ -1,5 +1,40 @@
 # Release Notes
 
+## v0.5.3 (2026-01-08)
+
+### Features
+
+- **Hook debugging** - New `--debug <file>` flag writes diagnostic output to file
+  - Shows environment variables, resolved paths, references found, and resolution steps
+  - Outputs preview of injected prompt for verification
+
+- **Prefix supersession** - Prefix-only references supersede specific references
+  - `§META` now supersedes `§META.2`, `§META.3`, etc. before expansion
+  - Reduces duplicate processing and ensures complete policy coverage
+
+- **Error blocking** - Hook blocks with error message on resolution failure
+  - Returns `permissionDecision: "deny"` with `permissionDecisionReason` containing error details
+  - Surfaces policy configuration issues to the user instead of silent failure
+
+### Bug Fixes
+
+- **Plugin agent resolution** - Hook now resolves plugin-namespaced agents
+  - `policies:policy-reviewer` resolves to `${CLAUDE_PLUGIN_ROOT}/agents/policy-reviewer.md`
+  - Only resolves agents matching the plugin's own namespace (derived from directory name)
+  - Non-matching namespaces pass through (Claude Code limitation: plugins cannot resolve paths of other installed plugins)
+
+- **Code fence preservation** - Section extraction now ignores stop patterns inside code blocks
+  - `{§END}` inside fenced code blocks no longer terminates extraction prematurely
+  - Preserves complete markdown including template examples
+
+- **Inline reference handling** - Fixed `SECTION_MARKER_PATTERN` to only match actual headers
+  - Pattern changed from `/\{§/` to `/^##?#? \{§/`
+  - Inline references like `` `{§PREFIX.X}` `` no longer terminate subsection extraction
+
+- **Prompt formatting** - Added blank lines around `<policies>` tags for better readability
+
+---
+
 ## v0.5.2 (2026-01-06)
 
 ### Documentation
