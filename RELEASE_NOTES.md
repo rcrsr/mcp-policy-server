@@ -1,5 +1,47 @@
 # Release Notes
 
+## v0.6.0 (2026-01-08)
+
+### Features
+
+- **Policy file format checker** - New `policy-cli check <file>` subcommand validates policy file structure
+  - Section header format (`{§PREFIX.NUMBER}`)
+  - Heading level correctness (`##` for sections, `###` for subsections)
+  - Code fence matching (all opened blocks closed)
+  - Orphan subsections (subsections without parent section)
+  - Contiguous section numbering (no gaps, starts at 1)
+  - Mixed prefix detection (warning only)
+
+### Error Codes
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| `MALFORMED_SECTION` | error | Invalid `{§...}` header format |
+| `WRONG_HEADING_LEVEL` | error | Incorrect heading depth for section type |
+| `UNCLOSED_FENCE` | error | Code block never closed |
+| `ORPHAN_SUBSECTION` | error | Subsection without parent whole section |
+| `NUMBERING_GAP` | error | Non-contiguous or not starting at 1 |
+| `MIXED_PREFIX` | warning | Different base prefixes in same file |
+
+### Usage
+
+```bash
+policy-cli check policy-app.md
+```
+
+Example output:
+```
+✗ policy-app.md
+  ✗ Line 7: [NUMBERING_GAP] Gap in §APP numbering: missing 2-3 before 4
+  ✗ Line 26: [NUMBERING_GAP] Gap in §APP numbering: missing 5-6 before 7
+
+  2 error(s), 0 warning(s)
+```
+
+Exit codes: 0 (no errors), 1 (errors found)
+
+---
+
 ## v0.5.3 (2026-01-08)
 
 ### Features

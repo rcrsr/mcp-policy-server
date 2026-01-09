@@ -21,6 +21,7 @@ import { buildSectionIndex } from './indexer.js';
 import { findEmbeddedReferences, expandRange } from './parser.js';
 import { fetchSectionsWithIndex, resolveSectionLocationsWithIndex } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
+import { checkPolicyFile, formatCheckResult } from './checker.js';
 import { SectionNotation, SectionIndex } from './types.js';
 
 type Subcommand =
@@ -28,7 +29,8 @@ type Subcommand =
   | 'validate-references'
   | 'extract-references'
   | 'list-sources'
-  | 'resolve-references';
+  | 'resolve-references'
+  | 'check';
 
 interface ParsedArgs {
   subcommand: Subcommand | null;
@@ -42,6 +44,7 @@ const SUBCOMMANDS: Subcommand[] = [
   'extract-references',
   'list-sources',
   'resolve-references',
+  'check',
 ];
 
 /**
@@ -107,6 +110,7 @@ Subcommands:
   extract-references  Extract § references from a file
   list-sources        List available policy files and section prefixes
   resolve-references  Map § references to their source files
+  check               Validate policy file format (sections, numbering, fencing)
 
 Options:
   -c, --config <path>  Path to policies.json or glob pattern
@@ -199,6 +203,31 @@ Options:
 Example:
   policy-cli resolve-references §DOC.1 §DOC.2 --config "./policies/*.md"
 `,
+    check: `
+Usage: policy-cli check <file> [options]
+
+Validate policy file format including sections, numbering, and code fencing.
+
+Checks performed:
+  - Section header format ({§PREFIX.NUMBER})
+  - Heading level correctness (## for sections, ### for subsections)
+  - Code fence matching (all opened blocks closed)
+  - Orphan subsections (subsections without parent section)
+  - Section numbering gaps
+
+Arguments:
+  <file>  Policy file to validate
+
+Options:
+  -h, --help  Show this help
+
+Exit codes:
+  0  No errors (warnings may exist)
+  1  Format errors found
+
+Example:
+  policy-cli check policy-app.md
+`,
   };
 
   console.error(usageMap[subcommand]);
@@ -282,7 +311,9 @@ function handleValidateReferences(args: string[], configPath?: string): void {
       result.valid = false;
       result.invalid.push(ref);
       const files = index.duplicates.get(ref)!;
-      result.details.push(`${ref}: Found in multiple files:\n${files.map((f) => `  - ${f}`).join('\n')}`);
+      result.details.push(
+        `${ref}: Found in multiple files:\n${files.map((f) => `  - ${f}`).join('\n')}`
+      );
       continue;
     }
 
@@ -377,6 +408,29 @@ function handleResolveReferences(args: string[], configPath?: string): void {
 }
 
 /**
+ * Handle check subcommand
+ */
+function handleCheck(args: string[]): void {
+  if (args.length === 0) {
+    console.error('Error: check requires a file argument');
+    printSubcommandUsage('check');
+    process.exit(1);
+  }
+
+  const filePath = path.isAbsolute(args[0]) ? args[0] : path.resolve(process.cwd(), args[0]);
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`Error: File not found: ${filePath}`);
+    process.exit(1);
+  }
+
+  const result = checkPolicyFile(filePath);
+  console.log(formatCheckResult(result, args[0]));
+
+  process.exit(result.valid ? 0 : 1);
+}
+
+/**
  * Main entry point
  */
 function main(): void {
@@ -403,6 +457,9 @@ function main(): void {
         break;
       case 'resolve-references':
         handleResolveReferences(args, configPath);
+        break;
+      case 'check':
+        handleCheck(args);
         break;
     }
   } catch (error) {

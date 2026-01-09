@@ -313,3 +313,68 @@ export class ValidationError extends Error {
     Object.setPrototypeOf(this, ValidationError.prototype);
   }
 }
+
+/**
+ * Severity levels for policy file format issues
+ */
+export type CheckSeverity = 'error' | 'warning';
+
+/**
+ * Single issue found during policy file format check
+ *
+ * Represents a specific format problem at a given location
+ * in a policy file, with severity and descriptive message.
+ *
+ * @example
+ * ```typescript
+ * const issue: CheckIssue = {
+ *   line: 15,
+ *   severity: 'error',
+ *   code: 'UNCLOSED_FENCE',
+ *   message: 'Code block opened at line 10 is never closed'
+ * };
+ * ```
+ */
+export interface CheckIssue {
+  /** Line number where issue was detected (1-based) */
+  line: number;
+
+  /** Severity level: error (must fix) or warning (should fix) */
+  severity: CheckSeverity;
+
+  /** Machine-readable error code for programmatic handling */
+  code: string;
+
+  /** Human-readable description of the issue */
+  message: string;
+}
+
+/**
+ * Result of policy file format check
+ *
+ * Contains all issues found and summary statistics.
+ * A file passes validation when errors is 0.
+ *
+ * @example
+ * ```typescript
+ * const result: CheckResult = {
+ *   valid: false,
+ *   errors: 2,
+ *   warnings: 1,
+ *   issues: [...]
+ * };
+ * ```
+ */
+export interface CheckResult {
+  /** True when no errors found (warnings allowed) */
+  valid: boolean;
+
+  /** Count of error-level issues */
+  errors: number;
+
+  /** Count of warning-level issues */
+  warnings: number;
+
+  /** All issues found during check */
+  issues: CheckIssue[];
+}

@@ -397,7 +397,10 @@ async function main(): Promise<void> {
     debugLog(debug, 'loading config...');
     config = loadConfig(args.configPath);
     debugLog(debug, `config loaded: ${config.files.length} files`);
-    debugLog(debug, `policy files: ${config.files.slice(0, 5).join(', ')}${config.files.length > 5 ? '...' : ''}`);
+    debugLog(
+      debug,
+      `policy files: ${config.files.slice(0, 5).join(', ')}${config.files.length > 5 ? '...' : ''}`
+    );
     debugLog(debug, 'building section index...');
     index = buildSectionIndex(config);
     debugLog(debug, `index built: ${index.sectionCount} sections`);
