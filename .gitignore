@@ -33,7 +33,7 @@ logs/
 *.log
 
 # Claude files
-.claude/
+.claude/settings-local.json
 
 # policy files
 .policies/
