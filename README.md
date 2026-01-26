@@ -130,7 +130,9 @@ The plugin intercepts Task tool calls, extracts § references from the agent fil
 
 ## Method 2: Claude Code Hook
 
-Manual hook configuration for custom policy paths or behavior. Use this when the Plugin method's default `.claude/policies/*.md` path doesn't fit your project structure.
+Manual hook configuration for custom policy paths or behavior. Use this when the Plugin method's default `.claude/policies/*.md` path doesn't fit your project structure, or when building plugins that bundle `mcp-policy-server` as a dependency.
+
+**Plugin authors:** The hook auto-discovers `$CLAUDE_PROJECT_DIR/.claude/{agents,policies}` and `$CLAUDE_PLUGIN_ROOT/{agents,policies}` when no explicit paths are provided. Your plugin can call `policy-hook` without arguments and it will find both plugin-bundled and project-level agents/policies automatically.
 
 ### Step 1: Configure the Hook
 

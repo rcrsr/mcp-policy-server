@@ -1,6 +1,6 @@
 {
   "name": "@rcrsr/mcp-policy-server",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "MCP server providing token-efficient access to policy documentation via § notation",
   "main": "dist/index.js",
   "bin": {
@@ -67,6 +67,7 @@
     "prettier": "^3.7.4",
     "rimraf": "^6.1.2",
     "ts-jest": "^29.4.6",
+    "tsc-files": "^1.1.4",
     "typescript": "^5.9.3"
   }
 }

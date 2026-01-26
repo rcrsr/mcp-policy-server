@@ -110,11 +110,14 @@ Hook mode for Claude Code PreToolUse integration.
 Reads JSON from stdin, injects policies into prompts, outputs hook response.
 
 Options:
-  -c, --config <path>     Path to policies.json or glob pattern
-                          (defaults to MCP_POLICY_CONFIG env var or ./policies.json)
+  -c, --config <pattern>  Path to policies.json or glob pattern
+                          (defaults to MCP_POLICY_CONFIG env var, or auto-discovers
+                          $CLAUDE_PROJECT_DIR/.claude/policies/*.md and
+                          $CLAUDE_PLUGIN_ROOT/policies/*.md)
   -a, --agents-dir <path> Agent files directory (can be specified multiple times)
                           Directories are searched in order until agent file is found
-                          (defaults to $CLAUDE_PROJECT_DIR/.claude/agents)
+                          (defaults to $CLAUDE_PROJECT_DIR/.claude/agents and
+                          $CLAUDE_PLUGIN_ROOT/agents if directories exist)
   -d, --debug <file>      Write debug output to file
   -h, --help              Show this help message
 
@@ -130,6 +133,10 @@ Example hook configuration:
       }]
     }
   }
+
+Plugin authors: When bundling mcp-policy-server in a plugin, call policy-hook without
+arguments. It auto-discovers agents and policies from both $CLAUDE_PLUGIN_ROOT and
+$CLAUDE_PROJECT_DIR, enabling zero-config setup for end users.
 
 Note: 'policy-fetch' is supported as an alias for backwards compatibility.
 `);
@@ -299,14 +306,37 @@ async function main(): Promise<void> {
     `agentsDirs arg: ${args.agentsDirs.length > 0 ? args.agentsDirs.join(', ') : '(not set)'}`
   );
 
-  // Determine agents directories - resolve paths and add default if none specified
+  // Determine agents directories - resolve paths and add defaults if none specified
   const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-  const resolvedAgentsDirs: string[] =
-    args.agentsDirs.length > 0
-      ? args.agentsDirs.map((dir) => (path.isAbsolute(dir) ? dir : path.resolve(projectDir, dir)))
-      : [path.join(projectDir, '.claude', 'agents')];
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
 
-  debugLog(debug, `resolved agentsDirs: ${resolvedAgentsDirs.join(', ')}`);
+  let resolvedAgentsDirs: string[];
+  if (args.agentsDirs.length > 0) {
+    // User provided explicit directories
+    resolvedAgentsDirs = args.agentsDirs.map((dir) =>
+      path.isAbsolute(dir) ? dir : path.resolve(projectDir, dir)
+    );
+  } else {
+    // Default: project agents first, then plugin agents (if plugin root is set)
+    // Order: project -> plugin (project takes precedence)
+    const defaultDirs: string[] = [];
+    const projectAgentsDir = path.join(projectDir, '.claude', 'agents');
+    if (fs.existsSync(projectAgentsDir)) {
+      defaultDirs.push(projectAgentsDir);
+    }
+    if (pluginRoot) {
+      const pluginAgentsDir = path.join(pluginRoot, 'agents');
+      if (fs.existsSync(pluginAgentsDir)) {
+        defaultDirs.push(pluginAgentsDir);
+      }
+    }
+    resolvedAgentsDirs = defaultDirs;
+  }
+
+  debugLog(
+    debug,
+    `resolved agentsDirs: ${resolvedAgentsDirs.length > 0 ? resolvedAgentsDirs.join(', ') : '(none found)'}`
+  );
 
   // Read and parse stdin
   const stdinData = await readStdin();
@@ -336,7 +366,6 @@ async function main(): Promise<void> {
 
   // Find agent file - handle plugin-namespaced agents (e.g., "policies:policy-reviewer")
   let agentPath: string | null = null;
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   // Derive our plugin namespace from CLAUDE_PLUGIN_ROOT directory name
   const ourNamespace = pluginRoot ? path.basename(pluginRoot) : null;
 
@@ -405,12 +434,35 @@ async function main(): Promise<void> {
     console.error = (): void => {};
   }
 
+  // Determine policy config - use explicit config or build from default directories
+  let effectiveConfigPath = args.configPath;
+  if (!effectiveConfigPath && !process.env.MCP_POLICY_CONFIG) {
+    // Build default policy patterns from project and plugin directories
+    // Order: project -> plugin (project takes precedence in section resolution)
+    const policyPatterns: string[] = [];
+    const projectPoliciesDir = path.join(projectDir, '.claude', 'policies');
+    if (fs.existsSync(projectPoliciesDir)) {
+      policyPatterns.push(path.join(projectPoliciesDir, '*.md'));
+    }
+    if (pluginRoot) {
+      const pluginPoliciesDir = path.join(pluginRoot, 'policies');
+      if (fs.existsSync(pluginPoliciesDir)) {
+        policyPatterns.push(path.join(pluginPoliciesDir, '*.md'));
+      }
+    }
+    if (policyPatterns.length > 0) {
+      // Use inline JSON format for multiple patterns
+      effectiveConfigPath = JSON.stringify({ files: policyPatterns });
+      debugLog(debug, `using default policy patterns: ${policyPatterns.join(', ')}`);
+    }
+  }
+
   // Load config and build index
   let config: ServerConfig;
   let index: SectionIndex;
   try {
     debugLog(debug, 'loading config...');
-    config = loadConfig(args.configPath);
+    config = loadConfig(effectiveConfigPath);
     debugLog(debug, `config loaded: ${config.files.length} files`);
     debugLog(
       debug,

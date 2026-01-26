@@ -79,13 +79,29 @@ Configure hooks in your project's `.claude/settings.json`.
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `--config <pattern>` | No | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
-| `--agents-dir <path>` | No | Agent files directory (can be specified multiple times; directories searched in order; defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
+| `--config <pattern>` | No | Glob pattern for policy files (see Default Discovery below) |
+| `--agents-dir <path>` | No | Agent files directory (can be specified multiple times; see Default Discovery below) |
 | `--debug <file>` | No | Write debug output to file for troubleshooting |
+
+### Default Discovery (Plugin-Friendly)
+
+When no explicit `--config` or `--agents-dir` is provided, `policy-hook` auto-discovers directories:
+
+**Agents** (searched in order):
+1. `$CLAUDE_PROJECT_DIR/.claude/agents` (project agents)
+2. `$CLAUDE_PLUGIN_ROOT/agents` (plugin agents, if env var is set)
+
+**Policies** (searched in order):
+1. `$CLAUDE_PROJECT_DIR/.claude/policies/*.md` (project policies)
+2. `$CLAUDE_PLUGIN_ROOT/policies/*.md` (plugin policies, if env var is set)
+
+Directories that don't exist are skipped. Project directories take precedence over plugin directories.
+
+**Plugin authors:** This auto-discovery means your plugin's hooks can simply call `policy-hook` without arguments. The hook will find your plugin's agents and policies automatically via `$CLAUDE_PLUGIN_ROOT`, while also picking up any project-level customizations. No user configuration required.
 
 ### Multiple Agent Directories
 
-Specify multiple `--agents-dir` flags to search across directories:
+Specify multiple `--agents-dir` flags to override default discovery:
 
 ```json
 {
@@ -106,10 +122,13 @@ Directories are searched in order. The first matching agent file is used.
 ### How Hook Mode Works
 
 1. Claude Code calls the hook with JSON on stdin containing `tool_name` and `tool_input`
-2. Hook extracts the agent file path from `tool_input.subagent_type`
-3. Hook reads the agent file and extracts all § references (ignoring code-fenced content)
-4. Policies are fetched and injected into the prompt via `hookSpecificOutput.updatedInput.prompt`
-5. If no policies found or agent already uses `mcp__policy-server__fetch_policies` tool, hook outputs `{"decision": "allow"}`
+2. Hook extracts the agent name from `tool_input.subagent_type` (e.g., `"code-reviewer"`)
+3. Hook locates the agent file by searching `--agents-dir` directories for `<agent-name>.md`
+4. Hook reads the agent file and extracts all § references (ignoring code-fenced content)
+5. Policies are fetched and injected into the prompt via `hookSpecificOutput.updatedInput.prompt`
+6. If no policies found or agent already uses `mcp__policy-server__fetch_policies` tool, hook outputs `{"decision": "allow"}`
+
+**Why `--agents-dir` matters:** The hook receives only the agent name (e.g., `"code-reviewer"`), not the file path. It must locate the actual `.md` file to scan for § references. The `--agents-dir` option tells the hook where to find agent files. Without it, the hook uses auto-discovery (see Default Discovery below).
 
 ### Agent File Format
 
