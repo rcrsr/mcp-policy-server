@@ -22,14 +22,12 @@ const HYPHENATED_POLICY = path.join(FIXTURES_DIR, 'policy-hyphenated.md');
 describe('validator', () => {
   describe('validateFromIndex', () => {
     // Mock console.error to avoid cluttering test output
-    let consoleErrorSpy: jest.SpyInstance;
-
     beforeEach(() => {
-      consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
     });
 
     afterEach(() => {
-      consoleErrorSpy.mockRestore();
+      vi.restoreAllMocks();
     });
 
     it('should return valid result when no duplicates exist', () => {

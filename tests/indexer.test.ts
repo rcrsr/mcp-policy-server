@@ -1,8 +1,6 @@
 /**
  * Tests for index optimization and error handling
  */
-
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import {
   buildSectionIndex,
   ensureFreshIndex,

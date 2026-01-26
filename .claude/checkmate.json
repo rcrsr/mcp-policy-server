@@ -1,9 +1,37 @@
 {
   "environments": [
     {
-      "name": "root",
-      "paths": ["."],
-      "exclude": ["dist/**"],
+      "name": "tests",
+      "paths": ["tests"],
+      "checks": {
+        ".ts": [
+          {
+            "name": "prettier",
+            "command": "npx",
+            "args": ["prettier", "--check", "$FILE"],
+            "parser": "prettier",
+            "_auto": true
+          },
+          {
+            "name": "eslint",
+            "command": "npx",
+            "args": ["eslint", "$FILE"],
+            "parser": "eslint",
+            "_auto": true
+          },
+          {
+            "name": "tsc-files",
+            "command": "npx",
+            "args": ["tsc-files", "--noEmit", "-p", "tsconfig.test.json", "$FILE"],
+            "parser": "tsc",
+            "_auto": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "src",
+      "paths": ["src"],
       "checks": {
         ".ts": [
           {
@@ -27,7 +55,14 @@
             "parser": "tsc",
             "_auto": true
           }
-        ],
+        ]
+      }
+    },
+    {
+      "name": "root",
+      "paths": ["."],
+      "exclude": ["dist/**", "src/**", "tests/**"],
+      "checks": {
         ".json,.md": [
           {
             "name": "prettier",
