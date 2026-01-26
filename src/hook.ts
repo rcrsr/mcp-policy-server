@@ -23,7 +23,7 @@ import { SectionNotation, SectionIndex } from './types.js';
 
 interface ParsedArgs {
   configPath?: string;
-  agentsDir?: string;
+  agentsDirs: string[];
   debugFile?: string;
 }
 
@@ -58,7 +58,7 @@ function parseArgs(): ParsedArgs {
   }
 
   let configPath: string | undefined;
-  let agentsDir: string | undefined;
+  const agentsDirs: string[] = [];
   let debugFile: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -80,11 +80,12 @@ function parseArgs(): ParsedArgs {
         process.exit(1);
       }
     } else if (arg === '--agents-dir' || arg === '-a') {
-      agentsDir = args[++i];
-      if (!agentsDir) {
+      const dir = args[++i];
+      if (!dir) {
         console.error('Error: --agents-dir requires a path argument');
         process.exit(1);
       }
+      agentsDirs.push(dir);
     } else if (!arg.startsWith('-')) {
       // Ignore positional arguments for backwards compat
       continue;
@@ -95,7 +96,7 @@ function parseArgs(): ParsedArgs {
     }
   }
 
-  return { configPath, agentsDir, debugFile };
+  return { configPath, agentsDirs, debugFile };
 }
 
 /**
@@ -111,7 +112,8 @@ Reads JSON from stdin, injects policies into prompts, outputs hook response.
 Options:
   -c, --config <path>     Path to policies.json or glob pattern
                           (defaults to MCP_POLICY_CONFIG env var or ./policies.json)
-  -a, --agents-dir <path> Agent files directory
+  -a, --agents-dir <path> Agent files directory (can be specified multiple times)
+                          Directories are searched in order until agent file is found
                           (defaults to $CLAUDE_PROJECT_DIR/.claude/agents)
   -d, --debug <file>      Write debug output to file
   -h, --help              Show this help message
@@ -292,17 +294,19 @@ async function main(): Promise<void> {
   debugLog(debug, `CLAUDE_PLUGIN_ROOT: ${process.env.CLAUDE_PLUGIN_ROOT ?? '(not set)'}`);
   debugLog(debug, `cwd: ${process.cwd()}`);
   debugLog(debug, `configPath arg: ${args.configPath ?? '(not set)'}`);
-  debugLog(debug, `agentsDir arg: ${args.agentsDir ?? '(not set)'}`);
+  debugLog(
+    debug,
+    `agentsDirs arg: ${args.agentsDirs.length > 0 ? args.agentsDirs.join(', ') : '(not set)'}`
+  );
 
-  // Determine agents directory
+  // Determine agents directories - resolve paths and add default if none specified
   const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-  const resolvedAgentsDir = args.agentsDir
-    ? path.isAbsolute(args.agentsDir)
-      ? args.agentsDir
-      : path.resolve(projectDir, args.agentsDir)
-    : path.join(projectDir, '.claude', 'agents');
+  const resolvedAgentsDirs: string[] =
+    args.agentsDirs.length > 0
+      ? args.agentsDirs.map((dir) => (path.isAbsolute(dir) ? dir : path.resolve(projectDir, dir)))
+      : [path.join(projectDir, '.claude', 'agents')];
 
-  debugLog(debug, `resolved agentsDir: ${resolvedAgentsDir}`);
+  debugLog(debug, `resolved agentsDirs: ${resolvedAgentsDirs.join(', ')}`);
 
   // Read and parse stdin
   const stdinData = await readStdin();
@@ -331,7 +335,7 @@ async function main(): Promise<void> {
   }
 
   // Find agent file - handle plugin-namespaced agents (e.g., "policies:policy-reviewer")
-  let agentPath: string;
+  let agentPath: string | null = null;
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   // Derive our plugin namespace from CLAUDE_PLUGIN_ROOT directory name
   const ourNamespace = pluginRoot ? path.basename(pluginRoot) : null;
@@ -349,15 +353,26 @@ async function main(): Promise<void> {
     }
 
     agentPath = path.join(pluginRoot, 'agents', `${agentName}.md`);
+    debugLog(debug, `agent file: ${agentPath}`);
+    debugLog(debug, `agent exists: ${fs.existsSync(agentPath)}`);
   } else {
-    // Project agent: agent-name -> ${CLAUDE_PROJECT_DIR}/.claude/agents/agent-name.md
-    agentPath = path.join(resolvedAgentsDir, `${subagentType}.md`);
+    // Project agent: search through all agent directories in order
+    const agentFileName = `${subagentType}.md`;
+    for (const dir of resolvedAgentsDirs) {
+      const candidatePath = path.join(dir, agentFileName);
+      debugLog(debug, `checking agent path: ${candidatePath}`);
+      if (fs.existsSync(candidatePath)) {
+        agentPath = candidatePath;
+        debugLog(debug, `agent found: ${agentPath}`);
+        break;
+      }
+    }
+    if (!agentPath) {
+      debugLog(debug, `agent file not found in any of: ${resolvedAgentsDirs.join(', ')}`);
+    }
   }
 
-  debugLog(debug, `agent file: ${agentPath}`);
-  debugLog(debug, `agent exists: ${fs.existsSync(agentPath)}`);
-
-  if (!fs.existsSync(agentPath)) {
+  if (!agentPath || !fs.existsSync(agentPath)) {
     debugLog(debug, 'EXIT: agent file not found');
     outputHookAllow();
     return;

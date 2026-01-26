@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.6.1 (2026-01-25)
+
+### Features
+
+- **Multiple agent directories** - `policy-hook` now accepts multiple `--agents-dir` flags
+  - Directories are searched in order until the agent file is found
+  - Enables shared agent libraries across projects
+  - Example: `policy-hook -a ./project-agents -a ./shared-agents`
+
+---
+
 ## v0.6.0 (2026-01-08)
 
 ### Features

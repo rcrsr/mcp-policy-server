@@ -80,7 +80,28 @@ Configure hooks in your project's `.claude/settings.json`.
 | Option | Required | Description |
 |--------|----------|-------------|
 | `--config <pattern>` | No | Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`) |
-| `--agents-dir <path>` | No | Agent files directory (defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
+| `--agents-dir <path>` | No | Agent files directory (can be specified multiple times; directories searched in order; defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`) |
+| `--debug <file>` | No | Write debug output to file for troubleshooting |
+
+### Multiple Agent Directories
+
+Specify multiple `--agents-dir` flags to search across directories:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Task",
+      "hooks": [{
+        "type": "command",
+        "command": "npx -p @rcrsr/mcp-policy-server policy-hook -a ./project-agents -a ./shared-agents --config \"./policies/*.md\""
+      }]
+    }]
+  }
+}
+```
+
+Directories are searched in order. The first matching agent file is used.
 
 ### How Hook Mode Works
 
