@@ -364,10 +364,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Find agent file - handle plugin-namespaced agents (e.g., "policies:policy-reviewer")
+  // Find agent file - handle plugin-namespaced agents (e.g., "myplugin:my-agent")
   let agentPath: string | null = null;
-  // Derive our plugin namespace from CLAUDE_PLUGIN_ROOT directory name
-  const ourNamespace = pluginRoot ? path.basename(pluginRoot) : null;
+  // Derive our plugin namespace from CLAUDE_PLUGIN_ROOT parent directory name
+  // Path structure: .../{namespace}/{version}/
+  const ourNamespace = pluginRoot ? path.basename(path.dirname(pluginRoot)) : null;
 
   if (subagentType.includes(':')) {
     const [namespace, agentName] = subagentType.split(':');
