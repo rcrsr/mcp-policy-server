@@ -54,6 +54,19 @@
             ],
             "parser": "oxlint",
             "_auto": true
+          },
+          {
+            "name": "tsc-files",
+            "command": "node",
+            "args": [
+              "node_modules/tsc-files/cli.js",
+              "--noEmit",
+              "-p",
+              "tsconfig.test.json",
+              "$FILE"
+            ],
+            "parser": "tsc",
+            "_auto": true
           }
         ]
       }
@@ -88,6 +101,17 @@
               "$FILE"
             ],
             "parser": "oxlint",
+            "_auto": true
+          },
+          {
+            "name": "tsc-files",
+            "command": "node",
+            "args": [
+              "node_modules/tsc-files/cli.js",
+              "--noEmit",
+              "$FILE"
+            ],
+            "parser": "tsc",
             "_auto": true
           }
         ]
