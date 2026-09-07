@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Naming this array replaces oxlint's CLI defaults rather than extending
+  // them, so every plugin this repo wants is listed explicitly.
+  "plugins": ["typescript", "oxc", "import", "vitest", "promise", "unicorn"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/explicit-function-return-type": "off",
+    "typescript/no-namespace": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/triple-slash-reference": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/no-array-constructor": "error",
+
+    // Ships in the vitest plugin's correctness category. The suite asserts
+    // inside branches by design (after a guard narrows a union). Same
+    // decision as rill-cli.
+    "vitest/no-conditional-expect": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.ts"],
+      "rules": {
+        "typescript/explicit-function-return-type": "warn"
+      }
+    }
+  ],
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "**/coverage/**", "**/*.d.ts"]
+}
