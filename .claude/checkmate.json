@@ -1,28 +1,66 @@
 {
   "environments": [
     {
+      "name": "conduct",
+      "paths": [
+        "conduct"
+      ],
+      "checks": {
+        ".md": [
+          {
+            "name": "conduct",
+            "command": "node",
+            "args": [
+              "conduct/resources/scripts/validate-documents.mjs",
+              "--file",
+              "$FILE",
+              "--json"
+            ],
+            "parser": "jsonl",
+            "_conduct": true
+          }
+        ]
+      },
+      "_conduct": true
+    },
+    {
       "name": "tests",
-      "paths": ["tests"],
+      "paths": [
+        "tests"
+      ],
       "checks": {
         ".ts": [
           {
             "name": "prettier",
             "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "args": [
+              "prettier",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           },
           {
             "name": "eslint",
             "command": "npx",
-            "args": ["eslint", "$FILE"],
+            "args": [
+              "eslint",
+              "$FILE"
+            ],
             "parser": "eslint",
             "_auto": true
           },
           {
             "name": "tsc-files",
             "command": "npx",
-            "args": ["tsc-files", "--noEmit", "-p", "tsconfig.test.json", "$FILE"],
+            "args": [
+              "tsc-files",
+              "--noEmit",
+              "-p",
+              "tsconfig.test.json",
+              "$FILE"
+            ],
             "parser": "tsc",
             "_auto": true
           }
@@ -31,27 +69,40 @@
     },
     {
       "name": "src",
-      "paths": ["src"],
+      "paths": [
+        "src"
+      ],
       "checks": {
         ".ts": [
           {
             "name": "prettier",
             "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "args": [
+              "prettier",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           },
           {
             "name": "eslint",
             "command": "npx",
-            "args": ["eslint", "$FILE"],
+            "args": [
+              "eslint",
+              "$FILE"
+            ],
             "parser": "eslint",
             "_auto": true
           },
           {
             "name": "tsc-files",
             "command": "npx",
-            "args": ["tsc-files", "--noEmit", "$FILE"],
+            "args": [
+              "tsc-files",
+              "--noEmit",
+              "$FILE"
+            ],
             "parser": "tsc",
             "_auto": true
           }
@@ -60,19 +111,38 @@
     },
     {
       "name": "root",
-      "paths": ["."],
-      "exclude": ["dist/**", "src/**", "tests/**"],
+      "paths": [
+        "."
+      ],
+      "exclude": [
+        "dist/**",
+        "src/**",
+        "tests/**"
+      ],
       "checks": {
         ".json,.md": [
           {
             "name": "prettier",
             "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "args": [
+              "prettier",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           }
         ]
       }
+    }
+  ],
+  "tasks": [
+    {
+      "name": "policy-reviewer",
+      "match": "conduct:policy-engineer",
+      "action": "review",
+      "message": "Invoke conduct:policy-reviewer to validate the policy file.",
+      "_conduct": true
     }
   ]
 }
