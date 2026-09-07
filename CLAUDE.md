@@ -6,9 +6,9 @@ MCP server and CLI for policy documentation via § notation. Provides automatic 
 
 ```bash
 npm run build              # Compile TypeScript
-npm test                   # Run Jest tests
+npm test                   # Run Vitest tests
 npm start                  # Start MCP server
-npm run pre-commit:fix     # Format, lint, typecheck
+npm run pre-commit:fix     # oxfmt, oxlint --fix, typecheck
 ```
 
 **Binaries:**
@@ -22,6 +22,7 @@ src/
   index.ts    - MCP server entry, tool definitions
   hook.ts     - Hook binary for PreToolUse integration
   cli.ts      - CLI binary with subcommands
+  checker.ts  - Policy file format checker (structure, numbering, code fences)
   config.ts   - Configuration loading, path resolution
   handlers.ts - Tool request handlers, chunking logic
   indexer.ts  - Section indexing, file watching
