@@ -1,0 +1,72 @@
+# Codanna ignore patterns (gitignore syntax)
+# https://git-scm.com/docs/gitignore
+#
+# This file tells codanna which files to exclude from indexing.
+# Each line specifies a pattern. Patterns follow the same rules as .gitignore.
+
+# Build artifacts
+target/
+build/
+dist/
+*.o
+*.so
+*.dylib
+*.exe
+*.dll
+
+# Test files (uncomment to exclude tests from indexing)
+# tests/
+# *_test.rs
+# *.test.js
+# *.spec.ts
+# test_*.py
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Codanna's own directory
+.codanna/
+
+# Dependency directories
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.egg-info/
+.cargo/
+
+# IDE and editor directories
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# Documentation (uncomment if you don't want to index docs)
+# docs/
+# *.md
+
+# Generated files
+*.generated.*
+*.auto.*
+*_pb2.py
+*.pb.go
+
+# Version control
+.git/
+.svn/
+.hg/
+
+# Re-including specific files from an ignored directory:
+# gitignore cannot re-include a file whose parent directory is excluded, so
+# exclude the directory's *contents* (dir/*) rather than the directory (dir/).
+# To index target/doc/, change the "target/" line above to "target/*" and add:
+#   !target/doc/

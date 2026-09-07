@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
+    "module": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

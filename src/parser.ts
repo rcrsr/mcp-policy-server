@@ -246,7 +246,7 @@ function extractRange(lines: string[], startPattern: RegExp, stopPattern: RegExp
 
     if (inRange) {
       // Track code block state - toggle on fence markers
-      if (/^```/.test(line)) {
+      if (line.startsWith('```')) {
         inCodeBlock = !inCodeBlock;
       }
 

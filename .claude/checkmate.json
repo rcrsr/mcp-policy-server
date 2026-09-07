@@ -1,28 +1,70 @@
 {
   "environments": [
     {
+      "name": "conduct",
+      "paths": [
+        "conduct"
+      ],
+      "checks": {
+        ".md": [
+          {
+            "name": "conduct",
+            "command": "node",
+            "args": [
+              "conduct/resources/scripts/validate-documents.mjs",
+              "--file",
+              "$FILE",
+              "--json"
+            ],
+            "parser": "jsonl",
+            "_conduct": true
+          }
+        ]
+      },
+      "_conduct": true
+    },
+    {
       "name": "tests",
-      "paths": ["tests"],
+      "paths": [
+        "tests"
+      ],
       "checks": {
         ".ts": [
           {
-            "name": "prettier",
-            "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "name": "oxfmt",
+            "command": "node",
+            "args": [
+              "node_modules/oxfmt/bin/oxfmt",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           },
           {
-            "name": "eslint",
-            "command": "npx",
-            "args": ["eslint", "$FILE"],
-            "parser": "eslint",
+            "name": "oxlint",
+            "command": "node",
+            "args": [
+              "node_modules/oxlint/bin/oxlint",
+              "--config",
+              ".oxlintrc.json",
+              "--format=unix",
+              "--deny-warnings",
+              "$FILE"
+            ],
+            "parser": "oxlint",
             "_auto": true
           },
           {
             "name": "tsc-files",
-            "command": "npx",
-            "args": ["tsc-files", "--noEmit", "-p", "tsconfig.test.json", "$FILE"],
+            "command": "node",
+            "args": [
+              "node_modules/tsc-files/cli.js",
+              "--noEmit",
+              "-p",
+              "tsconfig.test.json",
+              "$FILE"
+            ],
             "parser": "tsc",
             "_auto": true
           }
@@ -31,27 +73,44 @@
     },
     {
       "name": "src",
-      "paths": ["src"],
+      "paths": [
+        "src"
+      ],
       "checks": {
         ".ts": [
           {
-            "name": "prettier",
-            "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "name": "oxfmt",
+            "command": "node",
+            "args": [
+              "node_modules/oxfmt/bin/oxfmt",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           },
           {
-            "name": "eslint",
-            "command": "npx",
-            "args": ["eslint", "$FILE"],
-            "parser": "eslint",
+            "name": "oxlint",
+            "command": "node",
+            "args": [
+              "node_modules/oxlint/bin/oxlint",
+              "--config",
+              ".oxlintrc.json",
+              "--format=unix",
+              "--deny-warnings",
+              "$FILE"
+            ],
+            "parser": "oxlint",
             "_auto": true
           },
           {
             "name": "tsc-files",
-            "command": "npx",
-            "args": ["tsc-files", "--noEmit", "$FILE"],
+            "command": "node",
+            "args": [
+              "node_modules/tsc-files/cli.js",
+              "--noEmit",
+              "$FILE"
+            ],
             "parser": "tsc",
             "_auto": true
           }
@@ -60,19 +119,38 @@
     },
     {
       "name": "root",
-      "paths": ["."],
-      "exclude": ["dist/**", "src/**", "tests/**"],
+      "paths": [
+        "."
+      ],
+      "exclude": [
+        "dist/**",
+        "src/**",
+        "tests/**"
+      ],
       "checks": {
-        ".json,.md": [
+        ".json,.mjs": [
           {
-            "name": "prettier",
-            "command": "npx",
-            "args": ["prettier", "--check", "$FILE"],
+            "name": "oxfmt",
+            "command": "node",
+            "args": [
+              "node_modules/oxfmt/bin/oxfmt",
+              "--check",
+              "$FILE"
+            ],
             "parser": "prettier",
             "_auto": true
           }
         ]
       }
+    }
+  ],
+  "tasks": [
+    {
+      "name": "policy-reviewer",
+      "match": "conduct:policy-engineer",
+      "action": "review",
+      "message": "Invoke conduct:policy-reviewer to validate the policy file.",
+      "_conduct": true
     }
   ]
 }

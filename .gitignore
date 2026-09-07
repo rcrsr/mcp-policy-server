@@ -35,8 +35,12 @@ logs/
 # Claude files
 .claude/settings-local.json
 
-# policy files
-.policies/
+# conduct
+conduct
+
+# codanna
+.codanna/
+.fastembed_cache
 
 # mcp server files
 .mcp.json

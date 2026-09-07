@@ -61,14 +61,14 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Configuration', () => {
-    test('test config has all required fields', () => {
+    test('config has all required fields', () => {
       expect(TEST_CONFIG.baseDir).toBeDefined();
       expect(TEST_CONFIG.files).toBeDefined();
       expect(Array.isArray(TEST_CONFIG.files)).toBe(true);
       expect(TEST_CONFIG.files.length).toBeGreaterThan(0);
     });
 
-    test('test config has maxChunkTokens default', () => {
+    test('config has maxChunkTokens default', () => {
       expect(TEST_CONFIG.maxChunkTokens).toBe(10000);
     });
 
@@ -144,19 +144,19 @@ describe('MCP Server Integration', () => {
       test('throws error for invalid section notation', () => {
         expect(() => {
           handleFetch({ sections: ['TEST.1'] }, TEST_CONFIG, indexState);
-        }).toThrow();
+        }).toThrow('Invalid section notation');
       });
 
       test('throws error for unknown prefix', () => {
         expect(() => {
           handleFetch({ sections: ['§UNKNOWN.1'] }, TEST_CONFIG, indexState);
-        }).toThrow();
+        }).toThrow('Section §UNKNOWN.1 not found in policy files');
       });
 
       test('throws error for missing section', () => {
         expect(() => {
           handleFetch({ sections: ['§TEST.999'] }, TEST_CONFIG, indexState);
-        }).toThrow();
+        }).toThrow('not found in policy files');
       });
 
       describe('prefix-only notation', () => {
@@ -430,7 +430,7 @@ describe('MCP Server Integration', () => {
       test('throws error for non-existent file', () => {
         expect(() => {
           handleExtractReferences({ file_path: '/non/existent/file.md' }, TEST_CONFIG);
-        }).toThrow();
+        }).toThrow('Failed to extract references from file');
       });
     });
 
