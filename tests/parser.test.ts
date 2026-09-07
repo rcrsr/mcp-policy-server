@@ -162,14 +162,10 @@ describe('parser', () => {
       });
 
       it('should list available prefixes in error message', () => {
-        try {
-          parseSectionNotation('§XYZ.1', fileMap);
-          fail('Should have thrown error');
-        } catch (error) {
-          expect((error as Error).message).toContain('Valid prefixes:');
-          expect((error as Error).message).toContain('META');
-          expect((error as Error).message).toContain('SYS');
-        }
+        const call = () => parseSectionNotation('§XYZ.1', fileMap);
+        expect(call).toThrow('Valid prefixes:');
+        expect(call).toThrow('META');
+        expect(call).toThrow('SYS');
       });
     });
   });
