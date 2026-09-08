@@ -5,15 +5,22 @@
  * dist/ has not been built; `npm run build` first to include them.
  */
 
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'sample-policies');
 const META_GLOB = path.join(FIXTURES_DIR, 'policy-meta.md').split(path.sep).join('/');
+
+function textOf(result: unknown): string {
+  const blocks = (result as { content: Array<{ type: string; text: string }> }).content;
+  return blocks.map((b) => b.text).join('');
+}
 
 function run(
   script: string,
@@ -122,49 +129,61 @@ describe.skipIf(!fs.existsSync(path.join(DIST, 'cli.js')))('built binaries', () 
       expect(stderr).toContain('Fatal error during startup');
     });
 
-    it('answers an MCP initialize request over stdio', async () => {
-      const initialize = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'smoke', version: '0.0.0' },
-        },
-      });
-
-      const child = spawn(process.execPath, [path.join(DIST, 'index.js')], {
+    it('serves the full tool surface over a real stdio transport', async () => {
+      const client = new Client({ name: 'smoke', version: '0.0.0' });
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [path.join(DIST, 'index.js')],
         cwd: ROOT,
-        env: { ...process.env, MCP_POLICY_CONFIG: META_GLOB },
+        env: { ...(process.env as Record<string, string>), MCP_POLICY_CONFIG: META_GLOB },
+        stderr: 'pipe',
       });
 
       let stderr = '';
-      child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (chunk: string) => (stderr += chunk));
+      transport.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
 
-      // The server stays alive on file watchers, so read one line then kill it
-      const firstLine = new Promise<string>((resolve, reject) => {
-        let buffered = '';
-        child.stdout.setEncoding('utf8');
-        child.stdout.on('data', (chunk: string) => {
-          buffered += chunk;
-          const newline = buffered.indexOf('\n');
-          if (newline !== -1) resolve(buffered.slice(0, newline));
-        });
-        child.on('error', reject);
-        child.on('exit', (code) => reject(new Error(`exited early with ${code}: ${stderr}`)));
-      });
-
-      child.stdin.write(initialize + '\n');
       try {
-        const response = JSON.parse(await firstLine);
-        expect(response.id).toBe(1);
-        expect(response.result.serverInfo.name).toBe('policy-server');
-        expect(response.result.capabilities).toMatchObject({ tools: {}, prompts: {} });
+        await client.connect(transport);
+
+        expect(client.getServerVersion()?.name).toBe('policy-server');
+        expect(client.getServerCapabilities()).toMatchObject({ tools: {}, prompts: {} });
         expect(stderr).toContain('running on stdio');
+
+        const tools = await client.listTools();
+        expect(tools.tools.map((t) => t.name).sort()).toEqual([
+          'extract_references',
+          'fetch_policies',
+          'list_sources',
+          'resolve_references',
+          'validate_references',
+        ]);
+
+        const sources = await client.callTool({ name: 'list_sources', arguments: {} });
+        expect(textOf(sources)).toContain('- §META');
+
+        const fetched = await client.callTool({
+          name: 'fetch_policies',
+          arguments: { sections: ['§META.1'] },
+        });
+        expect(textOf(fetched)).toContain('§META.1');
+
+        const validated = await client.callTool({
+          name: 'validate_references',
+          arguments: { references: ['§META.1', '§META.77'] },
+        });
+        expect(JSON.parse(textOf(validated))).toMatchObject({
+          valid: false,
+          invalid: ['§META.77'],
+        });
+
+        const prompts = await client.listPrompts();
+        expect(prompts.prompts.map((p) => p.name)).toContain('auto-fetch');
+
+        await expect(client.callTool({ name: 'nope', arguments: {} })).rejects.toThrow(
+          /Unknown tool/
+        );
       } finally {
-        child.kill();
+        await client.close();
       }
     });
   });
