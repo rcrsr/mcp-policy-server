@@ -1,0 +1,36 @@
+# Pre-sets the native Issue Type. Idea = captured but not yet shaped into
+# implementable work. Promotion = change the Type to what it turned out to be.
+# Taxonomy: .github/labeler.yml header.
+name: Idea
+description: 'Captured but not yet shaped, becomes Bug/Feature/Chore/Security on promotion'
+type: Idea
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: 'The problem or outcome you are chasing, rough is fine. Shaping happens at promotion. No need for a solution.'
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Supporting context
+      description: Optional. Links, prior art in other MCP servers or CLIs, or related issues (#N). What sparked it.
+    validations:
+      required: false
+  - type: dropdown
+    id: areas
+    attributes:
+      label: Area(s)
+      description: Best guess at where in the codebase, becomes the area:* labels at triage.
+      multiple: true
+      options:
+        - server
+        - cli
+        - hook
+        - core
+        - docs
+        - dx
+    validations:
+      required: true

@@ -1,0 +1,44 @@
+name: Dependency review
+
+# Diffs the dependency manifest of the PR against its base and fails on a
+# vulnerable addition. Pull-request only: the action compares two commits, so
+# it has nothing to diff on a push to main.
+#
+# This file alone is not enough. The action needs the repository's dependency
+# graph enabled, which is a host setting no workflow can turn on; without it
+# the job runs on every PR and fails every time with "Dependency review is not
+# supported on this repository", which is a permanently red check that proves
+# nothing. Verify with:
+#   gh api repos/rcrsr/mcp-policy-server/dependency-graph/sbom --jq '.sbom.name'
+#
+# No deny-licenses list. This package is GPL-3.0-or-later, so copyleft
+# dependencies are compatible with its distribution; the licence axis has
+# nothing to reject here.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # This action publishes no moving `v4`/`v5` tag, only `vX.Y.Z`, so the
+      # trailing comment names the release the SHA belongs to exactly.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure

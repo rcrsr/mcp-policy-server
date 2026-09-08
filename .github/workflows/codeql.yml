@@ -1,0 +1,50 @@
+name: CodeQL
+
+# No path filtering, for the same reason as ci.yml: a skipped run reports no
+# status, and this workflow is a candidate required context.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Weekly, so a newly published CodeQL query reaches this repo without
+    # waiting for the next commit. Monday 07:00 UTC, ahead of the dependabot run.
+    - cron: '0 7 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          languages: javascript-typescript
+          # security-and-quality over the default security-extended. The hook
+          # parses untrusted stdin JSON from Claude Code and both the hook and
+          # the server resolve user-supplied file paths and globs, so a
+          # correctness defect here is reachable from untrusted input rather
+          # than a lint nit.
+          queries: security-and-quality
+
+      # No build step. javascript-typescript uses CodeQL's `none` build mode,
+      # which extracts from source directly. Running the build would only add
+      # emitted output for CodeQL to re-analyze.
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          category: '/language:javascript-typescript'

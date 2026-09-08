@@ -1,0 +1,50 @@
+# A single npm package at the root, so `directories` needs no packages/ glob.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directories:
+      - '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - 'area:dx'
+    groups:
+      # One PR per tool family. Ungrouped, the shared toolchain produces a
+      # separate PR per bump, which guarantees the updates get ignored.
+      oxc:
+        patterns:
+          - 'oxlint'
+          - 'oxfmt'
+      typescript:
+        patterns:
+          - 'typescript'
+          - 'tsc-files'
+          - '@types/*'
+      testing:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+      dev-tooling:
+        patterns:
+          - 'knip'
+          - 'lefthook'
+          - 'rimraf'
+
+  # Action versions. Separate ecosystem, so it needs its own entry. This is
+  # what keeps the SHA pins in .github/workflows current: dependabot reads the
+  # trailing release comment on each `uses:` to know which release the SHA
+  # represents.
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - 'area:dx'
+    groups:
+      actions:
+        patterns:
+          - '*'

@@ -1,0 +1,171 @@
+# =============================================================================
+# THE MCP-POLICY-SERVER ISSUE TAXONOMY, in one place. Four axes; one is a
+# label set.
+#
+# The shape mirrors rcrsr/rill-cli (see its .github/labeler.yml). What differs
+# is axis 1: the areas are derived from THIS repository's structure. Copying
+# rill-cli's area list would produce labels for a bundler and an extension
+# manager this repository does not contain.
+#
+#   1. AREA (where) -- `area:*` labels, the glob map below. Path-derivable, so
+#      PRs get them automatically (actions/labeler via
+#      .github/workflows/pr-labels.yml). On issues the filer sets them.
+#      Pick ONE primary area, the one that owns the work, and add a second only
+#      when the work is genuinely co-owned. The PR labeler is additive and
+#      mechanical, so cross-cutting PRs collect one label per touched path. The
+#      minimize rule governs what humans and skills apply, not the labeler.
+#      Six areas, mapped to this repository's three entry points plus the
+#      engine they share:
+#        area:server    the MCP server -- index.ts (stdio entry), server.ts
+#                       (tool and prompt definitions, request dispatch),
+#                       handlers.ts (tool handlers, response chunking).
+#                       Anything a client sees over the MCP transport.
+#        area:cli       the policy-cli binary -- cli.ts, cli-runner.ts.
+#                       Subcommands, flag parsing, exit codes, stdout/stderr
+#                       contract.
+#        area:hook      the policy-hook binary -- hook.ts, hook-runner.ts.
+#                       The Claude Code PreToolUse pipeline: agent lookup,
+#                       config discovery, prompt injection, fail-open contract.
+#        area:core      the § notation engine every entry point shares --
+#                       parser.ts, resolver.ts, indexer.ts, validator.ts,
+#                       operations.ts, checker.ts, config.ts, types.ts.
+#                       Notation parsing, range expansion, recursive
+#                       resolution, section indexing, file watching, the
+#                       policy-file format checker, configuration loading.
+#        area:docs      documentation -- README, CHANGELOG, CLAUDE.md, docs/.
+#        area:dx        CI, toolchain, lint rules, and root config. Anything no
+#                       consumer of `@rcrsr/mcp-policy-server` sees. A root
+#                       deps bump touches none of the source globs above, so it
+#                       would otherwise get no area.
+#
+#   2. STATUS (why not now) -- the `on-hold` label, issues-only, optional.
+#      The one state GitHub has no native home for (unprefixed, matching
+#      needs-triage):
+#        on-hold       valid, shaped work deliberately parked. Not low priority
+#                      (that is Priority Low, how urgent, not why parked) and
+#                      not blocked-on-a-specific-issue.
+#      Blocked on a SPECIFIC issue: use the native issue dependency ("Mark as
+#      blocked by" in the sidebar; query is:blocked) and NO label. Never
+#      duplicate a native relationship as a label. Deliberate park with no
+#      single blocker: on-hold. Both: both. An unshaped idea is NOT a status,
+#      it is Type Idea (see axis 3).
+#      Anti-rot ritual: periodically sweep `is:open label:on-hold` (has the
+#      prerequisite landed?) and `is:open type:Idea` (promote or close).
+#
+#   3. TYPE (what kind) -- native org-level Issue Type, NOT a label, issues-only:
+#        Bug . Feature . Chore . Security . Idea
+#      Feature = net-new capability a user can see: a new MCP tool, a new CLI
+#      subcommand or flag, a new hook behaviour, new output. Chore = robustness
+#      work on existing machinery: debt, refactors, test suites, perf,
+#      internals with no visible surface change. Decision rule: "would a user
+#      of the server, CLI, or hook notice it in a release note? Feature.
+#      Otherwise Chore."
+#      Bug = existing behavior is wrong: a section resolves to the wrong
+#      content, a range expands incorrectly, the hook blocks a call it should
+#      allow, a subcommand exits non-zero when it should succeed.
+#      Security takes precedence when the issue is fundamentally about handling
+#      untrusted input safely: the hook's stdin payload, user-supplied file
+#      paths and globs in configuration, agent-file resolution, path traversal
+#      in section extraction.
+#      Idea = captured but not yet shaped into implementable work. Still
+#      carries >=1 area: (best guess); Priority stays unset. Promotion = change
+#      the Type to what it turned out to be, refine area, set Priority.
+#      Documentation work is NOT a type: it is `area:docs` on a Bug (docs are
+#      wrong), Feature (new guide), or Chore (restructure).
+#
+#   4. PRIORITY (how urgent) -- native org-level Priority Issue Field, NOT a
+#      label, issues-only, optional: High = the queue (next 1-2 weeks, keep
+#      <=5) . Medium = this cycle . Low = someday. Unset = not yet triaged.
+#      Urgent exists as a GitHub default option; by convention we never set it.
+#
+# TITLES: issues are titled `[<primary-area>] <title>`, lowercase, bare area
+# name without the `area:` prefix: "[hook] non-string subagent_type throws".
+# Exactly one bracket, the primary area. PR titles do NOT take the bracket:
+# they become main's squash-commit subjects and keep conventional-commit
+# format (`fix(hook): ...`), where the scope already names the primary area.
+#
+# COLORS: one signal per axis, label text is the load-bearing distinction
+# (WCAG 1.4.1, color reinforces, never the only signal). area:* uniform blue
+# #1d76db; on-hold gray #d2dae1 (the parked convention); needs-triage yellow
+# #fbca04 (the pending convention). Create them with
+# .github/scripts/sync-labels.sh.
+#
+# Rule (enforced advisorily by .github/workflows/issue-labels.yml): every open
+# issue carries >=1 area: label + exactly one Type; Priority is set at triage;
+# on-hold is optional and never satisfies the area requirement. Issue forms
+# (.github/ISSUE_TEMPLATE/) pre-set the Type when filing from the web UI. PRs
+# carry only area labels; the linked issue holds Type/Priority/on-hold.
+# The rcrsr org must have Issue Types (Bug/Feature/Chore/Security/Idea) and the
+# Priority field enabled for the native axes to apply.
+# This file doubles as the one-stop taxonomy doc; there is no separate
+# CONTRIBUTING section to keep in sync.
+# =============================================================================
+
+'area:server':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/index.ts'
+          - 'src/server.ts'
+          - 'src/handlers.ts'
+          - 'tests/mcp-server.test.ts'
+          - 'tests/handlers.test.ts'
+
+'area:cli':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cli.ts'
+          - 'src/cli-runner.ts'
+          - 'tests/cli-runner.test.ts'
+
+'area:hook':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/hook.ts'
+          - 'src/hook-runner.ts'
+          - 'tests/hook-runner.test.ts'
+
+'area:core':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/parser.ts'
+          - 'src/resolver.ts'
+          - 'src/indexer.ts'
+          - 'src/validator.ts'
+          - 'src/operations.ts'
+          - 'src/checker.ts'
+          - 'src/config.ts'
+          - 'src/types.ts'
+          - 'tests/parser.test.ts'
+          - 'tests/resolver.test.ts'
+          - 'tests/indexer.test.ts'
+          - 'tests/validator.test.ts'
+          - 'tests/operations.test.ts'
+          - 'tests/checker.test.ts'
+          - 'tests/config.test.ts'
+          - 'tests/fixtures/**'
+
+'area:docs':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'README.md'
+          - 'CHANGELOG.md'
+          - 'CLAUDE.md'
+          - 'docs/**'
+
+'area:dx':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - '.claude/**'
+          - 'tests/binaries.test.ts'
+          # Root toolchain inputs. A root-only deps bump touches none of the
+          # source globs above, so it would otherwise get no area at all.
+          - 'package.json'
+          - 'package-lock.json'
+          - 'tsconfig*.json'
+          - 'vitest.config.mjs'
+          - '.oxlintrc.json'
+          - '.oxfmtrc.json'
+          - 'knip.jsonc'
+          - 'lefthook.yml'
+          - '.gitignore'

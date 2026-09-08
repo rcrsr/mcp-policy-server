@@ -1,0 +1,39 @@
+name: PR area labels
+
+# Auto-applies `area:*` labels to PRs from their changed-file paths, per the
+# glob map in .github/labeler.yml (which doubles as the one-stop doc for the
+# whole taxonomy). Area is the only axis PRs carry. Type and Priority are
+# native, issues-only metadata on the linked issue. Additive only (sync-labels
+# false); never strips a label a maintainer added by hand.
+#
+# First-party actions/labeler. Uses `pull_request` (not pull_request_target):
+# internal branch PRs get the pull-requests:write token they need, and we never
+# run untrusted PR code. Fork PRs get a read-only token, so the job is gated to
+# same-repo PRs below. Fork PRs skip cleanly instead of failing with a 403 when
+# labeler tries to write.
+#
+# The job-level `if:` is safe here only because this workflow supplies no
+# required status check: a skipped job never satisfies a required context.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-labels-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  area:
+    runs-on: ubuntu-latest
+    # Same-repo PRs only. Fork PRs get a read-only GITHUB_TOKEN, so labeler's
+    # write would 403 and surface a failing check on external contributions.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: false

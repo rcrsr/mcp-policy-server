@@ -1,0 +1,53 @@
+# Pre-sets the native Issue Type. Decision rule vs Chore: "would a user of the
+# server, CLI, or hook notice it in a release note?" Yes -> Feature.
+# Taxonomy: .github/labeler.yml.
+name: Feature
+description: 'Net-new capability a user can see: a new MCP tool, CLI subcommand, flag, or hook behaviour'
+type: Feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: >-
+        What cannot be done today, and who hits it (agent author, policy
+        maintainer, MCP client, Claude Code hook)? Show the tool call or
+        command you wish you could run.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: >-
+        What does done look like as an observable behavior, not the
+        implementation. Include the new tool, subcommand, flag, or output
+        surface and how it fails when misused (exit code, error text, or
+        MCP error). Keep it scoped; link related issues with #N.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Supporting context
+      description: >-
+        Optional. Prior art in other MCP servers or CLIs, related issues (#N),
+        and pointers to relevant source. What to look at, not the solution to
+        build.
+    validations:
+      required: false
+  - type: dropdown
+    id: areas
+    attributes:
+      label: Area(s)
+      description: Where in the codebase, becomes the area:* labels at triage.
+      multiple: true
+      options:
+        - server
+        - cli
+        - hook
+        - core
+        - docs
+        - dx
+    validations:
+      required: true
