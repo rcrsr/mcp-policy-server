@@ -19,18 +19,32 @@ npm run pre-commit:fix     # oxfmt, oxlint --fix, typecheck
 
 ```
 src/
-  index.ts    - MCP server entry, tool definitions
-  hook.ts     - Hook binary for PreToolUse integration
-  cli.ts      - CLI binary with subcommands
-  checker.ts  - Policy file format checker (structure, numbering, code fences)
-  config.ts   - Configuration loading, path resolution
-  handlers.ts - Tool request handlers, chunking logic
-  indexer.ts  - Section indexing, file watching
-  parser.ts   - § notation parsing, range expansion
-  resolver.ts - Recursive reference resolution
-  validator.ts - Duplicate detection
-  types.ts    - Type definitions
+  index.ts       - MCP server stdio entry (load config, build index, connect)
+  server.ts      - createServer(): tool/prompt definitions and request dispatch
+  cli.ts         - policy-cli entry; maps runCli() result to stdout/stderr/exit code
+  cli-runner.ts  - CLI arg parsing and subcommands, returns { exitCode, stdout, stderr }
+  hook.ts        - policy-hook entry; argv, stdin, debug file, calls runHook()
+  hook-runner.ts - Hook pipeline: agent lookup, config discovery, prompt injection
+  operations.ts  - Shared logic for handlers/CLI/hook: expand, extract, validate, fetch
+  handlers.ts    - MCP tool request handlers, chunking logic
+  checker.ts     - Policy file format checker (structure, numbering, code fences)
+  config.ts      - Configuration loading, path resolution
+  indexer.ts     - Section indexing, file watching, per-section details
+  parser.ts      - § notation parsing, range expansion, section extraction
+  resolver.ts    - Recursive reference resolution
+  validator.ts   - Duplicate detection
+  types.ts       - Type definitions
 ```
+
+Entry points (`index.ts`, `cli.ts`, `hook.ts`) hold process glue only. Put behaviour in the
+runner/operations modules so it stays testable in-process. Logic shared by more than one entry
+point belongs in `operations.ts`.
+
+## Testing
+
+- `npm test` runs Vitest; `npm run test:coverage` enforces 80% thresholds on `src/`.
+- `tests/binaries.test.ts` spawns the built binaries and is skipped until `npm run build` has run.
+- MCP transport tests use `InMemoryTransport` from the SDK (`tests/mcp-server.test.ts`).
 
 ## Key Behaviors
 

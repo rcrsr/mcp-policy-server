@@ -11,7 +11,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts', 'src/**/*.test.ts'],
+      // Process entry points are exercised as subprocesses in tests/binaries.test.ts,
+      // which V8 coverage cannot observe.
+      exclude: ['src/**/*.d.ts', 'src/index.ts', 'src/cli.ts', 'src/hook.ts'],
       reportsDirectory: 'coverage',
       thresholds: {
         branches: 80,

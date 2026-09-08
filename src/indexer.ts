@@ -13,7 +13,12 @@ import {
   SectionDetail,
   SectionDetailsResult,
 } from './types.js';
-import { detectCodeBlockRanges, expandRange, findEmbeddedReferences } from './parser.js';
+import {
+  detectCodeBlockRanges,
+  expandRange,
+  extractSectionFromLines,
+  findEmbeddedReferences,
+} from './parser.js';
 
 /**
  * Pattern for splitting a fully-qualified section id (e.g. §APP.4.1,
@@ -24,13 +29,6 @@ import { detectCodeBlockRanges, expandRange, findEmbeddedReferences } from './pa
  * and hyphens, since it can carry range notation (e.g. §APP.4.1-3).
  */
 const SECTION_ID_SPLIT_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(.+)$/;
-
-/**
- * Marker for the start of any § section header (whole section or
- * subsection), used to stop subsection extraction at the next § marker.
- * Local mirror of parser.ts's private SECTION_MARKER_PATTERN.
- */
-const SECTION_MARKER_PATTERN = /^##?#? \{§/;
 
 /**
  * Debounce state for file change handling
@@ -156,11 +154,6 @@ export function validateIndex(
       for (const file of files) {
         console.error(`  ${file}`);
       }
-    } else if (fileSet.size > 1) {
-      // This should never happen, but log if it does
-      console.error(
-        `[BUG] Section ${section} has ${fileSet.size} files in Set but array length is ${files.length}`
-      );
     }
   }
 
@@ -499,66 +492,6 @@ export function ensureFreshIndex(state: IndexState, config: ServerConfig): Secti
     }
   }
   return state.index;
-}
-
-/**
- * Extract lines between start and stop pattern markers
- *
- * Local mirror of parser.ts's private extractRange helper, used here so
- * buildSectionDetails can extract multiple sections from a single
- * already-read/split file instead of re-reading the file per section
- * (see extractSectionFromLines).
- *
- * @internal
- */
-function extractRangeFromLines(lines: string[], startPattern: RegExp, stopPattern: RegExp): string {
-  let inRange = false;
-  let inCodeBlock = false;
-  const extracted: string[] = [];
-
-  for (const line of lines) {
-    if (!inRange && startPattern.test(line)) {
-      inRange = true;
-      extracted.push(line);
-      continue;
-    }
-
-    if (inRange) {
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-      }
-
-      if (!inCodeBlock && stopPattern.test(line)) {
-        break;
-      }
-      extracted.push(line);
-    }
-  }
-
-  return extracted.join('\n');
-}
-
-/**
- * Extract section content from an already-split line array
- *
- * Local mirror of parser.ts's extractSection, operating on lines already
- * read into memory rather than reading the file from disk. Used by
- * buildSectionDetails to avoid re-reading/re-splitting a file once per
- * section when it contains multiple sections.
- *
- * @internal
- */
-function extractSectionFromLines(lines: string[], prefix: string, sectionNum: string): string {
-  const isSubsection = sectionNum.includes('.');
-
-  if (isSubsection) {
-    const startPattern = new RegExp(`^###? \\{§${prefix}\\.${sectionNum.replace(/\./g, '\\.')}\\}`);
-    return extractRangeFromLines(lines, startPattern, SECTION_MARKER_PATTERN);
-  } else {
-    const startPattern = new RegExp(`^## \\{§${prefix}\\.${sectionNum}\\}`);
-    const stopPattern = new RegExp(`^## \\{§${prefix}\\.[0-9]|^\\{§END\\}`);
-    return extractRangeFromLines(lines, startPattern, stopPattern);
-  }
 }
 
 /**

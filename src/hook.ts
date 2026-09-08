@@ -6,20 +6,14 @@
  * injects policies into the prompt, outputs hook response JSON.
  *
  * Usage:
- *   policy-hook [--config <path>] [--agents-dir <path>]
+ *   policy-hook [--config <path>] [--agents-dir <path>] [--debug <file>]
  *
  * Note: 'policy-fetch' is supported as an alias for backwards compatibility.
  * The --hook flag is accepted but ignored (hook mode is always implied).
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
-import { loadConfig, ServerConfig } from './config.js';
-import { expandSectionsWithIndex } from './handlers.js';
-import { buildSectionIndex } from './indexer.js';
-import { findEmbeddedReferences } from './parser.js';
-import { fetchSectionsWithIndex } from './resolver.js';
-import { SectionNotation, SectionIndex } from './types.js';
+import { runHook } from './hook-runner.js';
 
 interface ParsedArgs {
   configPath?: string;
@@ -27,83 +21,7 @@ interface ParsedArgs {
   debugFile?: string;
 }
 
-interface HookInput {
-  tool_input?: {
-    subagent_type?: string;
-    prompt?: string;
-  };
-}
-
-interface HookOutput {
-  hookSpecificOutput?: {
-    hookEventName: string;
-    permissionDecision: string;
-    updatedInput?: {
-      subagent_type?: string;
-      prompt: string;
-    };
-  };
-  permissionDecision?: string;
-}
-
-/**
- * Parse command line arguments
- */
-function parseArgs(): ParsedArgs {
-  const args = process.argv.slice(2);
-
-  if (args.includes('--help') || args.includes('-h')) {
-    printUsage();
-    process.exit(0);
-  }
-
-  let configPath: string | undefined;
-  const agentsDirs: string[] = [];
-  let debugFile: string | undefined;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    // Accept --hook for backwards compat but ignore it (hook mode is implied)
-    if (arg === '--hook') {
-      continue;
-    } else if (arg === '--debug' || arg === '-d') {
-      debugFile = args[++i];
-      if (!debugFile) {
-        console.error('Error: --debug requires a file path argument');
-        process.exit(1);
-      }
-    } else if (arg === '--config' || arg === '-c') {
-      configPath = args[++i];
-      if (!configPath) {
-        console.error('Error: --config requires a path argument');
-        process.exit(1);
-      }
-    } else if (arg === '--agents-dir' || arg === '-a') {
-      const dir = args[++i];
-      if (!dir) {
-        console.error('Error: --agents-dir requires a path argument');
-        process.exit(1);
-      }
-      agentsDirs.push(dir);
-    } else if (!arg.startsWith('-')) {
-      // Ignore positional arguments for backwards compat
-      continue;
-    } else {
-      console.error(`Error: Unknown option: ${arg}`);
-      printUsage();
-      process.exit(1);
-    }
-  }
-
-  return { configPath, agentsDirs, debugFile };
-}
-
-/**
- * Print usage information to stderr
- */
-function printUsage(): void {
-  console.error(`
+const USAGE = `
 Usage: policy-hook [options]
 
 Hook mode for Claude Code PreToolUse integration.
@@ -139,13 +57,58 @@ arguments. It auto-discovers agents and policies from both $CLAUDE_PLUGIN_ROOT a
 $CLAUDE_PROJECT_DIR, enabling zero-config setup for end users.
 
 Note: 'policy-fetch' is supported as an alias for backwards compatibility.
-`);
+`;
+
+/**
+ * Parse command line arguments
+ */
+function parseArgs(args: string[]): ParsedArgs {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.error(USAGE);
+    process.exit(0);
+  }
+
+  let configPath: string | undefined;
+  const agentsDirs: string[] = [];
+  let debugFile: string | undefined;
+
+  const requireValue = (flag: string, value: string | undefined): string => {
+    if (!value) {
+      console.error(`Error: ${flag} requires a path argument`);
+      process.exit(1);
+    }
+    return value;
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--hook') {
+      // Accepted for backwards compat; hook mode is implied
+      continue;
+    } else if (arg === '--debug' || arg === '-d') {
+      debugFile = requireValue('--debug', args[++i]);
+    } else if (arg === '--config' || arg === '-c') {
+      configPath = requireValue('--config', args[++i]);
+    } else if (arg === '--agents-dir' || arg === '-a') {
+      agentsDirs.push(requireValue('--agents-dir', args[++i]));
+    } else if (!arg.startsWith('-')) {
+      // Ignore positional arguments for backwards compat
+      continue;
+    } else {
+      console.error(`Error: Unknown option: ${arg}`);
+      console.error(USAGE);
+      process.exit(1);
+    }
+  }
+
+  return { configPath, agentsDirs, debugFile };
 }
 
 /**
  * Read all stdin as string
  */
-async function readStdin(): Promise<string> {
+function readStdin(): Promise<string> {
   return new Promise((resolve) => {
     let data = '';
     process.stdin.setEncoding('utf8');
@@ -155,138 +118,12 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * Check if agent file has MCP policy tool in frontmatter
- * Agents with this tool should fetch policies themselves
- *
- * Matches both direct and plugin-namespaced tools:
- * - mcp__policy-server__fetch_policies
- * - mcp__plugin_xyz_policy-server__fetch_policies
- */
-export function agentHasPolicyTool(content: string): boolean {
-  // Check for YAML frontmatter
-  if (!content.startsWith('---')) {
-    return false;
-  }
-
-  const endIndex = content.indexOf('---', 3);
-  if (endIndex === -1) {
-    return false;
-  }
-
-  const frontmatter = content.slice(3, endIndex);
-
-  // Look for tools line containing policy-server__fetch_policies
-  // Handles both mcp__policy-server__ and mcp__plugin_*_policy-server__
-  const toolsMatch = frontmatter.match(/^tools:\s*(.+)$/m);
-  if (!toolsMatch) {
-    return false;
-  }
-
-  return /mcp__(?:\w+_)*policy-server__fetch_policies/.test(toolsMatch[1]);
-}
-
-type FetchResult = { ok: true; content: string } | { ok: false; error: string };
-
-/**
- * Fetch policies from a file, returning content or error
- */
-function fetchPoliciesFromFile(
-  filePath: string,
-  config: ServerConfig,
-  index: SectionIndex,
-  debug: boolean
-): FetchResult {
-  if (!fs.existsSync(filePath)) {
-    debugLog(debug, `fetchPoliciesFromFile: file not found: ${filePath}`);
-    return { ok: true, content: '' };
-  }
-
-  const content = fs.readFileSync(filePath, 'utf8');
-  const rawReferences = findEmbeddedReferences(content);
-  debugLog(debug, `fetchPoliciesFromFile: found ${rawReferences.length} raw references`);
-
-  if (rawReferences.length === 0) {
-    return { ok: true, content: '' };
-  }
-
-  // Deduplicate and let prefix-only refs (§META) supersede specific refs (§META.2)
-  const uniqueRaw = Array.from(new Set(rawReferences));
-  const prefixOnlyRefs = uniqueRaw.filter((r) => /^§[A-Z][A-Z0-9-]*$/.test(r));
-  const references = uniqueRaw.filter((ref) => {
-    // Keep prefix-only refs
-    if (prefixOnlyRefs.includes(ref)) return true;
-    // Filter out specific refs if their prefix is already covered
-    const refPrefix = ref.match(/^§([A-Z][A-Z0-9-]*)\./)?.[1];
-    if (refPrefix && prefixOnlyRefs.includes(`§${refPrefix}`)) {
-      debugLog(debug, `fetchPoliciesFromFile: ${ref} superseded by §${refPrefix}`);
-      return false;
-    }
-    return true;
-  });
-  debugLog(debug, `fetchPoliciesFromFile: ${references.length} references after prefix dedup`);
-
-  try {
-    const expandedRefs = expandSectionsWithIndex(references, index);
-    debugLog(debug, `fetchPoliciesFromFile: expanded to ${expandedRefs.length} refs`);
-    const uniqueRefs = Array.from(new Set(expandedRefs)).sort() as SectionNotation[];
-    debugLog(debug, `fetchPoliciesFromFile: fetching ${uniqueRefs.length} unique refs`);
-
-    const result = fetchSectionsWithIndex(uniqueRefs, index, config.baseDir);
-    debugLog(debug, `fetchPoliciesFromFile: fetched ${result.length} chars`);
-    return { ok: true, content: result };
-  } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
-    debugLog(debug, `fetchPoliciesFromFile: ERROR - ${error}`);
-    return { ok: false, error };
-  }
-}
-
-/**
- * Output simple allow response for hooks
- */
-function outputHookAllow(): void {
-  process.stdout.write(JSON.stringify({ permissionDecision: 'allow' }));
-}
-
-/**
- * Output block response with error message for hooks
- */
-function outputHookBlock(reason: string): void {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: reason,
-      },
-    })
-  );
-}
-
-/**
- * Debug logger - outputs to stderr or file when debug mode is enabled
- */
-let debugFileHandle: number | null = null;
-
-function debugLog(debug: boolean, message: string): void {
-  if (debug) {
-    const line = `[policy-hook] ${message}\n`;
-    if (debugFileHandle !== null) {
-      fs.writeSync(debugFileHandle, line);
-    } else {
-      process.stderr.write(line);
-    }
-  }
-}
-
-/**
  * Main entry point
  */
 async function main(): Promise<void> {
-  const args = parseArgs();
-  const debug = !!args.debugFile;
+  const args = parseArgs(process.argv.slice(2));
 
-  // Open debug file if specified
+  let debugFileHandle: number | null = null;
   if (args.debugFile) {
     try {
       debugFileHandle = fs.openSync(args.debugFile, 'a');
@@ -295,254 +132,50 @@ async function main(): Promise<void> {
     }
   }
 
-  debugLog(debug, '=== policy-hook debug output ===');
-  debugLog(debug, `timestamp: ${new Date().toISOString()}`);
-  debugLog(debug, `CLAUDE_PROJECT_DIR: ${process.env.CLAUDE_PROJECT_DIR ?? '(not set)'}`);
-  debugLog(debug, `CLAUDE_PLUGIN_ROOT: ${process.env.CLAUDE_PLUGIN_ROOT ?? '(not set)'}`);
-  debugLog(debug, `cwd: ${process.cwd()}`);
-  debugLog(debug, `configPath arg: ${args.configPath ?? '(not set)'}`);
-  debugLog(
-    debug,
-    `agentsDirs arg: ${args.agentsDirs.length > 0 ? args.agentsDirs.join(', ') : '(not set)'}`
-  );
-
-  // Determine agents directories - resolve paths and add defaults if none specified
-  const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-
-  let resolvedAgentsDirs: string[];
-  if (args.agentsDirs.length > 0) {
-    // User provided explicit directories
-    resolvedAgentsDirs = args.agentsDirs.map((dir) =>
-      path.isAbsolute(dir) ? dir : path.resolve(projectDir, dir)
-    );
-  } else {
-    // Default: project agents first, then plugin agents (if plugin root is set)
-    // Order: project -> plugin (project takes precedence)
-    const defaultDirs: string[] = [];
-    const projectAgentsDir = path.join(projectDir, '.claude', 'agents');
-    if (fs.existsSync(projectAgentsDir)) {
-      defaultDirs.push(projectAgentsDir);
-    }
-    if (pluginRoot) {
-      const pluginAgentsDir = path.join(pluginRoot, 'agents');
-      if (fs.existsSync(pluginAgentsDir)) {
-        defaultDirs.push(pluginAgentsDir);
+  const log = args.debugFile
+    ? (message: string): void => {
+        const line = `[policy-hook] ${message}\n`;
+        if (debugFileHandle !== null) {
+          fs.writeSync(debugFileHandle, line);
+        } else {
+          process.stderr.write(line);
+        }
       }
-    }
-    resolvedAgentsDirs = defaultDirs;
-  }
+    : undefined;
 
-  debugLog(
-    debug,
-    `resolved agentsDirs: ${resolvedAgentsDirs.length > 0 ? resolvedAgentsDirs.join(', ') : '(none found)'}`
-  );
-
-  // Read and parse stdin
-  const stdinData = await readStdin();
-  debugLog(debug, `stdin length: ${stdinData.length} chars`);
-
-  let input: HookInput;
-  try {
-    input = JSON.parse(stdinData);
-  } catch (e) {
-    debugLog(debug, `EXIT: invalid JSON - ${e instanceof Error ? e.message : String(e)}`);
-    outputHookAllow();
-    return;
-  }
-
-  // Extract subagent type and prompt
-  const subagentType = input.tool_input?.subagent_type;
-  const prompt = input.tool_input?.prompt;
-
-  debugLog(debug, `subagent_type: ${subagentType ?? '(not set)'}`);
-  debugLog(debug, `prompt length: ${prompt?.length ?? 0} chars`);
-
-  if (!subagentType || !prompt) {
-    debugLog(debug, 'EXIT: missing subagent_type or prompt');
-    outputHookAllow();
-    return;
-  }
-
-  // Find agent file - handle plugin-namespaced agents (e.g., "myplugin:my-agent")
-  let agentPath: string | null = null;
-  // Derive our plugin namespace from CLAUDE_PLUGIN_ROOT parent directory name
-  // Path structure: .../{namespace}/{version}/
-  const ourNamespace = pluginRoot ? path.basename(path.dirname(pluginRoot)) : null;
-
-  if (subagentType.includes(':')) {
-    const [namespace, agentName] = subagentType.split(':');
-    debugLog(debug, `plugin agent detected: namespace=${namespace}, name=${agentName}`);
-    debugLog(debug, `our namespace: ${ourNamespace ?? '(unknown)'}`);
-
-    // Only resolve agents from our own plugin namespace
-    if (!pluginRoot || namespace !== ourNamespace) {
-      debugLog(debug, `EXIT: cannot resolve agent from namespace "${namespace}" (not ours)`);
-      outputHookAllow();
-      return;
-    }
-
-    agentPath = path.join(pluginRoot, 'agents', `${agentName}.md`);
-    debugLog(debug, `agent file: ${agentPath}`);
-    debugLog(debug, `agent exists: ${fs.existsSync(agentPath)}`);
-  } else {
-    // Project agent: search through all agent directories in order
-    const agentFileName = `${subagentType}.md`;
-    for (const dir of resolvedAgentsDirs) {
-      const candidatePath = path.join(dir, agentFileName);
-      debugLog(debug, `checking agent path: ${candidatePath}`);
-      if (fs.existsSync(candidatePath)) {
-        agentPath = candidatePath;
-        debugLog(debug, `agent found: ${agentPath}`);
-        break;
-      }
-    }
-    if (!agentPath) {
-      debugLog(debug, `agent file not found in any of: ${resolvedAgentsDirs.join(', ')}`);
-    }
-  }
-
-  if (!agentPath || !fs.existsSync(agentPath)) {
-    debugLog(debug, 'EXIT: agent file not found');
-    outputHookAllow();
-    return;
-  }
-
-  // Read agent file content
-  const agentContent = fs.readFileSync(agentPath, 'utf8');
-  debugLog(debug, `agent content: ${agentContent.length} chars`);
-
-  // Skip injection if agent has MCP policy tool - it will fetch policies itself
-  if (agentHasPolicyTool(agentContent)) {
-    debugLog(debug, 'EXIT: agent has MCP policy tool, skipping injection');
-    outputHookAllow();
-    return;
-  }
-
-  // Check for references in agent file before loading config
-  const references = findEmbeddedReferences(agentContent);
-  debugLog(debug, `references in agent: ${JSON.stringify(references)}`);
-
-  if (references.length === 0) {
-    debugLog(debug, 'EXIT: no § references in agent file');
-    outputHookAllow();
-    return;
-  }
-
-  // Suppress info logging unless in debug mode
-  const originalConsoleError = console.error;
-  if (!debug) {
-    console.error = (): void => {};
-  }
-
-  // Determine policy config - use explicit config or build from default directories
-  let effectiveConfigPath = args.configPath;
-  if (!effectiveConfigPath && !process.env.MCP_POLICY_CONFIG) {
-    // Build default policy patterns from project and plugin directories
-    // Order: project -> plugin (project takes precedence in section resolution)
-    const policyPatterns: string[] = [];
-    const projectPoliciesDir = path.join(projectDir, '.claude', 'policies');
-    if (fs.existsSync(projectPoliciesDir)) {
-      policyPatterns.push(path.join(projectPoliciesDir, '*.md'));
-    }
-    if (pluginRoot) {
-      const pluginPoliciesDir = path.join(pluginRoot, 'policies');
-      if (fs.existsSync(pluginPoliciesDir)) {
-        policyPatterns.push(path.join(pluginPoliciesDir, '*.md'));
-      }
-    }
-    if (policyPatterns.length > 0) {
-      // Use inline JSON format for multiple patterns
-      effectiveConfigPath = JSON.stringify({ files: policyPatterns });
-      debugLog(debug, `using default policy patterns: ${policyPatterns.join(', ')}`);
-    }
-  }
-
-  // Load config and build index
-  let config: ServerConfig;
-  let index: SectionIndex;
-  try {
-    debugLog(debug, 'loading config...');
-    config = loadConfig(effectiveConfigPath);
-    debugLog(debug, `config loaded: ${config.files.length} files`);
-    debugLog(
-      debug,
-      `policy files: ${config.files.slice(0, 5).join(', ')}${config.files.length > 5 ? '...' : ''}`
-    );
-    debugLog(debug, 'building section index...');
-    index = buildSectionIndex(config);
-    debugLog(debug, `index built: ${index.sectionCount} sections`);
-  } catch (e) {
-    console.error = originalConsoleError;
-    debugLog(debug, `EXIT: config/index error - ${e instanceof Error ? e.message : String(e)}`);
-    outputHookAllow();
-    return;
-  }
-
-  console.error = originalConsoleError;
-
-  // Fetch policies from agent file
-  debugLog(debug, 'fetching policies...');
-  const fetchResult = fetchPoliciesFromFile(agentPath, config, index, debug);
-
-  if (!fetchResult.ok) {
-    debugLog(debug, `BLOCK: ${fetchResult.error}`);
-    outputHookBlock(`Policy resolution failed: ${fetchResult.error}`);
-    return;
-  }
-
-  debugLog(debug, `policies fetched: ${fetchResult.content.length} chars`);
-
-  if (!fetchResult.content) {
-    debugLog(debug, 'EXIT: no policies resolved');
-    outputHookAllow();
-    return;
-  }
-
-  debugLog(debug, 'SUCCESS: injecting policies into prompt');
-
-  // Build modified prompt with blank line before policies block
-  const newPrompt = `${prompt}
-
-<policies>
-
-${fetchResult.content}
-
-</policies>`;
-
-  debugLog(debug, `injected prompt preview (first 600 chars):\n${newPrompt.slice(0, 600)}`);
-
-  // Output hook response with modified prompt
-  const output: HookOutput = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-      updatedInput: {
-        ...input.tool_input,
-        prompt: newPrompt,
-      },
-    },
+  const env = {
+    projectDir: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
+    pluginRoot: process.env.CLAUDE_PLUGIN_ROOT,
+    policyConfigEnv: process.env.MCP_POLICY_CONFIG,
   };
 
-  process.stdout.write(JSON.stringify(output));
-}
+  log?.('=== policy-hook debug output ===');
+  log?.(`timestamp: ${new Date().toISOString()}`);
+  log?.(`CLAUDE_PROJECT_DIR: ${process.env.CLAUDE_PROJECT_DIR ?? '(not set)'}`);
+  log?.(`CLAUDE_PLUGIN_ROOT: ${env.pluginRoot ?? '(not set)'}`);
+  log?.(`cwd: ${process.cwd()}`);
+  log?.(`configPath arg: ${args.configPath ?? '(not set)'}`);
+  log?.(`agentsDirs arg: ${args.agentsDirs.length > 0 ? args.agentsDirs.join(', ') : '(not set)'}`);
 
-// Only run main when executed directly, not when imported for testing
-const isDirectRun =
-  process.argv[1]?.endsWith('hook.js') ||
-  process.argv[1]?.endsWith('hook.ts') ||
-  process.argv[1]?.endsWith('policy-hook') ||
-  process.argv[1]?.endsWith('policy-fetch');
+  try {
+    const stdinData = await readStdin();
+    log?.(`stdin length: ${stdinData.length} chars`);
 
-if (isDirectRun) {
-  main()
-    .catch((error) => {
-      console.error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
-    })
-    .finally(() => {
-      if (debugFileHandle !== null) {
-        fs.closeSync(debugFileHandle);
-      }
+    const output = runHook(stdinData, {
+      configPath: args.configPath,
+      agentsDirs: args.agentsDirs,
+      env,
+      log,
     });
+    process.stdout.write(JSON.stringify(output));
+  } finally {
+    if (debugFileHandle !== null) {
+      fs.closeSync(debugFileHandle);
+    }
+  }
 }
+
+main().catch((error) => {
+  console.error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+});

@@ -488,3 +488,34 @@ describe('buildSectionDetails', () => {
     expect(skipped[0].reason).toMatch(/does not match expected/);
   });
 });
+
+describe('buildSectionDetails error handling', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('skips sections whose id cannot be parsed or whose file cannot be read', () => {
+    const missingFile = path.join(__dirname, 'fixtures', 'does-not-exist.md');
+    const index: SectionIndex = {
+      sectionMap: new Map([
+        ['§WEIRD', missingFile],
+        ['§GONE.1', missingFile],
+        ['§GONE.2', missingFile],
+      ]),
+      duplicates: new Map(),
+      fileMtimes: new Map(),
+      fileSizes: new Map(),
+      fileSections: new Map(),
+      lastIndexed: new Date(),
+      fileCount: 1,
+      sectionCount: 3,
+    };
+
+    const { details, skipped } = buildSectionDetails(index, __dirname);
+    expect(details).toEqual([]);
+    expect(skipped.map((s) => s.id)).toEqual(['§WEIRD', '§GONE.1', '§GONE.2']);
+    expect(skipped[0].reason).toContain('does not match expected §PREFIX.NUMBER format');
+    expect(skipped[1].reason).toMatch(/^Failed to read /);
+    expect(skipped[2].reason).toBe(skipped[1].reason);
+  });
+});
