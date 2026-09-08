@@ -3,12 +3,14 @@
  */
 import {
   buildSectionIndex,
+  buildSectionDetails,
   ensureFreshIndex,
   initializeIndexState,
   closeIndexState,
 } from '../src/indexer.js';
-import { SectionIndex } from '../src/types.js';
+import { SectionIndex, SectionNotation } from '../src/types.js';
 import { ServerConfig } from '../src/config.js';
+import { extractSection } from '../src/parser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -335,5 +337,154 @@ describe('Index Optimization', () => {
         closeIndexState(state);
       }
     });
+  });
+});
+
+describe('buildSectionDetails', () => {
+  const testDir = path.join(__dirname, 'fixtures', 'section-details-test');
+  const testFile = path.join(testDir, 'test.md');
+
+  let config: ServerConfig;
+
+  beforeEach(() => {
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      testFile,
+      [
+        '## {§TEST.1}',
+        'See §TEST.2 for details, and the range §TEST.5.1-3.',
+        '',
+        '```',
+        'Example referencing §TEST.4 inside a fence, should be excluded.',
+        '```',
+        '',
+        'Also see `§TEST.3` inline code, should be excluded.',
+        '',
+        '## {§TEST.2}',
+        'No references here.',
+        '',
+        '## {§TEST.3}',
+        'Nothing to see.',
+      ].join('\n')
+    );
+
+    config = {
+      files: [testFile],
+      baseDir: testDir,
+      maxChunkTokens: 10000,
+    };
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test('returns one record per section with id, prefix, file, byteLength, refs and no skipped entries', () => {
+    const index = buildSectionIndex(config);
+    const { details, skipped } = buildSectionDetails(index, config.baseDir);
+
+    expect(details.length).toBe(3);
+    expect(skipped).toEqual([]);
+    for (const detail of details) {
+      expect(detail.id).toBeDefined();
+      expect(detail.prefix).toBe('TEST');
+      expect(detail.file).toBe(path.relative(config.baseDir, testFile));
+      expect(detail.byteLength).toBeGreaterThan(0);
+      expect(Array.isArray(detail.refs)).toBe(true);
+    }
+  });
+
+  test('byteLength matches Buffer.byteLength of extracted section content', () => {
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const section2 = details.find((d) => d.id === '§TEST.2');
+    expect(section2).toBeDefined();
+    const expectedContent = extractSection(testFile, 'TEST', '2');
+    expect(section2!.byteLength).toBe(Buffer.byteLength(expectedContent, 'utf8'));
+  });
+
+  test('excludes § references inside fenced code blocks from refs', () => {
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    // §TEST.4 appears only inside the fenced code block, so its absence
+    // from refs proves the fenced occurrence was actually excluded
+    // (not merely deduped away with a real occurrence elsewhere).
+    expect(section1!.refs).not.toContain('§TEST.4');
+  });
+
+  test('excludes § references inside inline code from refs', () => {
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    expect(section1!.refs).not.toContain('§TEST.3');
+  });
+
+  test('expands range references into individual section ids', () => {
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    expect(section1!.refs).not.toContain('§TEST.5.1-3');
+    expect(section1!.refs).toEqual(expect.arrayContaining(['§TEST.5.1', '§TEST.5.2', '§TEST.5.3']));
+  });
+
+  test('excludes a section id from its own refs', () => {
+    fs.writeFileSync(
+      testFile,
+      [
+        '## {§TEST.1}',
+        'This section references itself via §TEST.1 and also §TEST.2.',
+        '',
+        '## {§TEST.2}',
+        'Nothing here.',
+      ].join('\n')
+    );
+
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    expect(section1!.refs).not.toContain('§TEST.1');
+    expect(section1!.refs).toContain('§TEST.2');
+  });
+
+  test('results are sorted by id', () => {
+    const index = buildSectionIndex(config);
+    const { details } = buildSectionDetails(index, config.baseDir);
+
+    const ids = details.map((d) => d.id);
+    const sortedIds = [...ids].sort();
+    expect(ids).toEqual(sortedIds);
+  });
+
+  test('reports skipped sections with a reason instead of throwing', () => {
+    fs.writeFileSync(
+      testFile,
+      ['## {§TEST.1}', 'Some content.', '', '## {§TEST.2}', 'More content.'].join('\n')
+    );
+
+    const index = buildSectionIndex(config);
+    // Simulate an id that fails SECTION_ID_SPLIT_PATTERN by injecting a
+    // malformed entry directly into the section map.
+    index.sectionMap.set('§' as SectionNotation, testFile);
+
+    const { details, skipped } = buildSectionDetails(index, config.baseDir);
+
+    expect(details.length).toBe(2);
+    expect(skipped.length).toBe(1);
+    expect(skipped[0].id).toBe('§');
+    expect(skipped[0].reason).toMatch(/does not match expected/);
   });
 });
