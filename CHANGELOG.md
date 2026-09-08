@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub repository setup:** Added GitHub Actions CI workflows, automated releases, nightly SDK checks, issue taxonomy, and security scanning. ([#10](https://github.com/rcrsr/mcp-policy-server/pull/10))
 - **Test coverage:** New suites for configuration loading, shared operations, the CLI runner, the hook pipeline, the MCP server over an in-memory transport, and built-binary smoke tests. Line coverage rose from 55% to 97% (branch coverage 89%). ([#9](https://github.com/rcrsr/mcp-policy-server/pull/9))
 - **list-sections subcommand:** New `policy-cli` subcommand exposing per-section index as JSON. ([#8](https://github.com/rcrsr/mcp-policy-server/pull/8))
 
