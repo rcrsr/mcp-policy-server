@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-08
+
 ### Added
 
 - **llms.txt:** Root-level [llms.txt](https://llmstxt.org/) giving LLM agents a condensed guide to § notation, the MCP tools, the CLI subcommands, and the hook. ([#12](https://github.com/rcrsr/mcp-policy-server/pull/12))
@@ -209,6 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of MCP Policy Server
 
+[0.7.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.0...v0.6.2
