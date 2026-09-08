@@ -156,6 +156,24 @@ export interface SectionDetail {
 }
 
 /**
+ * Record describing a section that was skipped while building
+ * list-sections output, with the reason it could not be included.
+ */
+export interface SectionDetailSkip {
+  id: string;
+  reason: string;
+}
+
+/**
+ * Result of buildSectionDetails: successfully built details plus any
+ * sections that had to be skipped, so callers can surface incomplete output.
+ */
+export interface SectionDetailsResult {
+  details: SectionDetail[];
+  skipped: SectionDetailSkip[];
+}
+
+/**
  * Index state with staleness tracking and file watchers
  *
  * Manages the section index lifecycle including lazy rebuilds

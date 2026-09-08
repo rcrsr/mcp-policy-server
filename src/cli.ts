@@ -413,9 +413,21 @@ ${Array.from(
  * Handle list-sections subcommand
  */
 function handleListSections(configPath?: string): void {
-  const { index } = loadConfigAndIndex(configPath);
-  const details = buildSectionDetails(index);
-  console.log(JSON.stringify(details, null, 2));
+  const { config, index } = loadConfigAndIndex(configPath);
+  const { details, skipped } = buildSectionDetails(index, config.baseDir);
+
+  if (skipped.length > 0) {
+    console.error(`Skipped sections: ${skipped.length}`);
+    for (const { id, reason } of skipped) {
+      console.error(`  - ${id}: ${reason}`);
+    }
+  }
+
+  process.stdout.write(JSON.stringify({ details, skipped }, null, 2) + '\n');
+
+  if (skipped.length > 0) {
+    process.exit(1);
+  }
 }
 
 /**

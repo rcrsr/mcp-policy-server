@@ -4,16 +4,33 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { ServerConfig } from './config.js';
-import { SectionNotation, SectionIndex, IndexState, SectionDetail } from './types.js';
-import { detectCodeBlockRanges, extractSection, findEmbeddedReferences } from './parser.js';
+import {
+  SectionNotation,
+  SectionIndex,
+  IndexState,
+  SectionDetail,
+  SectionDetailsResult,
+} from './types.js';
+import { detectCodeBlockRanges, expandRange, findEmbeddedReferences } from './parser.js';
 
 /**
- * Pattern for splitting a section id into prefix and section number
- * Matches the convention used elsewhere (cli.ts, index.ts) for parsing
- * fully-qualified section ids like §APP.4.1 into ('APP', '4.1')
+ * Pattern for splitting a fully-qualified section id (e.g. §APP.4.1,
+ * §APP-HOOK.2) into a prefix group and a section-number suffix group.
+ * The prefix must be one or more hyphen-separated segments, each starting
+ * with a letter followed by letters/digits (mirrors the prefix constraint
+ * used for section notation parsing). The suffix may itself contain digits
+ * and hyphens, since it can carry range notation (e.g. §APP.4.1-3).
  */
-const SECTION_ID_SPLIT_PATTERN = /^§([A-Z][A-Z0-9-]*)\.(.+)$/;
+const SECTION_ID_SPLIT_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(.+)$/;
+
+/**
+ * Marker for the start of any § section header (whole section or
+ * subsection), used to stop subsection extraction at the next § marker.
+ * Local mirror of parser.ts's private SECTION_MARKER_PATTERN.
+ */
+const SECTION_MARKER_PATTERN = /^##?#? \{§/;
 
 /**
  * Debounce state for file change handling
@@ -485,49 +502,149 @@ export function ensureFreshIndex(state: IndexState, config: ServerConfig): Secti
 }
 
 /**
+ * Extract lines between start and stop pattern markers
+ *
+ * Local mirror of parser.ts's private extractRange helper, used here so
+ * buildSectionDetails can extract multiple sections from a single
+ * already-read/split file instead of re-reading the file per section
+ * (see extractSectionFromLines).
+ *
+ * @internal
+ */
+function extractRangeFromLines(lines: string[], startPattern: RegExp, stopPattern: RegExp): string {
+  let inRange = false;
+  let inCodeBlock = false;
+  const extracted: string[] = [];
+
+  for (const line of lines) {
+    if (!inRange && startPattern.test(line)) {
+      inRange = true;
+      extracted.push(line);
+      continue;
+    }
+
+    if (inRange) {
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+      }
+
+      if (!inCodeBlock && stopPattern.test(line)) {
+        break;
+      }
+      extracted.push(line);
+    }
+  }
+
+  return extracted.join('\n');
+}
+
+/**
+ * Extract section content from an already-split line array
+ *
+ * Local mirror of parser.ts's extractSection, operating on lines already
+ * read into memory rather than reading the file from disk. Used by
+ * buildSectionDetails to avoid re-reading/re-splitting a file once per
+ * section when it contains multiple sections.
+ *
+ * @internal
+ */
+function extractSectionFromLines(lines: string[], prefix: string, sectionNum: string): string {
+  const isSubsection = sectionNum.includes('.');
+
+  if (isSubsection) {
+    const startPattern = new RegExp(`^###? \\{§${prefix}\\.${sectionNum.replace(/\./g, '\\.')}\\}`);
+    return extractRangeFromLines(lines, startPattern, SECTION_MARKER_PATTERN);
+  } else {
+    const startPattern = new RegExp(`^## \\{§${prefix}\\.${sectionNum}\\}`);
+    const stopPattern = new RegExp(`^## \\{§${prefix}\\.[0-9]|^\\{§END\\}`);
+    return extractRangeFromLines(lines, startPattern, stopPattern);
+  }
+}
+
+/**
  * Build per-section detail records for list-sections output
  *
  * Iterates the canonical (non-duplicate) sections in index.sectionMap,
  * extracts each section's content, and computes its outbound § references
  * using the same fence/inline-code exclusion findEmbeddedReferences applies.
+ * Range references (e.g. §APP.4.1-3) are expanded via expandRange, and a
+ * section's own id is excluded from its refs. Sections are grouped by file
+ * so each file is read and split at most once. Sections that cannot be
+ * parsed or extracted are omitted from details but reported in skipped.
  *
  * @param index - Section index to build details from
- * @returns Array of section detail records sorted by section id
+ * @param baseDir - Base directory used to compute relative file paths
+ * @returns Details sorted by section id, plus any skipped sections
  *
  * @example
  * ```typescript
  * const index = buildSectionIndex(config);
- * const details = buildSectionDetails(index);
- * // Returns: [{ id: '§APP.1', prefix: 'APP', file: '/path/policy-app.md',
+ * const { details, skipped } = buildSectionDetails(index, config.baseDir);
+ * // details: [{ id: '§APP.1', prefix: 'APP', file: 'policy-app.md',
  * //             byteLength: 123, refs: ['§META.2'] }, ...]
+ * // skipped: [{ id: '§BAD.1', reason: '...' }, ...]
  * ```
  */
-export function buildSectionDetails(index: SectionIndex): SectionDetail[] {
+export function buildSectionDetails(index: SectionIndex, baseDir: string): SectionDetailsResult {
   const details: SectionDetail[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+
+  // Group sections by file so each file is read and split at most once
+  const sectionsByFile = new Map<
+    string,
+    Array<{ id: string; prefix: string; sectionNum: string }>
+  >();
 
   for (const [id, filePath] of index.sectionMap.entries()) {
     const match = SECTION_ID_SPLIT_PATTERN.exec(id);
     if (!match) {
       console.error(`[ERROR] Section id ${id} does not match expected §PREFIX.NUMBER format`);
       console.error(`  Skipping this section in list-sections output`);
+      skipped.push({ id, reason: 'Section id does not match expected §PREFIX.NUMBER format' });
       continue;
     }
 
     const [, prefix, sectionNum] = match;
+    if (!sectionsByFile.has(filePath)) {
+      sectionsByFile.set(filePath, []);
+    }
+    sectionsByFile.get(filePath)!.push({ id, prefix, sectionNum });
+  }
 
+  for (const [filePath, sections] of sectionsByFile.entries()) {
+    let lines: string[];
     try {
-      const content = extractSection(filePath, prefix, sectionNum);
-      const byteLength = Buffer.byteLength(content, 'utf8');
-      const refs = Array.from(new Set(findEmbeddedReferences(content))).sort();
-
-      details.push({ id, prefix, file: filePath, byteLength, refs });
+      lines = fs.readFileSync(filePath, 'utf8').split('\n');
     } catch (error) {
-      console.error(
-        `[ERROR] Failed to extract section ${id} from ${filePath}: ${error instanceof Error ? error.message : String(error)}`
-      );
-      console.error(`  Skipping this section in list-sections output`);
+      const reason = `Failed to read ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
+      console.error(`[ERROR] ${reason}`);
+      console.error(`  Skipping ${sections.length} section(s) in list-sections output`);
+      for (const { id } of sections) {
+        skipped.push({ id, reason });
+      }
+      continue;
+    }
+
+    for (const { id, prefix, sectionNum } of sections) {
+      try {
+        const content = extractSectionFromLines(lines, prefix, sectionNum);
+        const byteLength = Buffer.byteLength(content, 'utf8');
+        const expandedRefs = findEmbeddedReferences(content).flatMap((ref) => expandRange(ref));
+        const refs = Array.from(new Set(expandedRefs))
+          .filter((r) => r !== id)
+          .sort();
+
+        details.push({ id, prefix, file: path.relative(baseDir, filePath), byteLength, refs });
+      } catch (error) {
+        const reason = `Failed to extract section from ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
+        console.error(
+          `[ERROR] Failed to extract section ${id} from ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+        );
+        console.error(`  Skipping this section in list-sections output`);
+        skipped.push({ id, reason });
+      }
     }
   }
 
-  return details.sort((a, b) => a.id.localeCompare(b.id));
+  return { details: details.sort((a, b) => a.id.localeCompare(b.id)), skipped };
 }
