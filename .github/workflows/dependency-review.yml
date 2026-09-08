@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   review:
-    name: Review
+    name: Dependency review
     runs-on: ubuntu-latest
     permissions:
       contents: read

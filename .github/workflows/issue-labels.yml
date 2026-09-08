@@ -149,9 +149,16 @@ jobs:
 
             // Not conformant: ensure the flag is on.
             if (!hasTriage) {
-              await github.rest.issues.addLabels({
-                owner, repo, issue_number: number, labels: [TRIAGE],
-              });
+              try {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: number, labels: [TRIAGE],
+                });
+              } catch (e) {
+                // Fail open: this workflow is advisory. A missing label,
+                // permission drift, or a transient API error should not fail
+                // the job -- just warn and move on.
+                core.warning(`addLabels failed: ${e.message}`);
+              }
             }
 
             // Comment at most once ever, on a newly filed or reopened issue.
@@ -166,9 +173,16 @@ jobs:
             const recent = Date.now() - Date.parse(fresh.createdAt) < 5 * 60_000;
             if (!['opened', 'reopened'].includes(context.payload.action) && !recent) return;
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: number, per_page: 100,
-            });
+            let comments;
+            try {
+              comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: number, per_page: 100,
+              });
+            } catch (e) {
+              // Fail open: this workflow is advisory.
+              core.warning(`listComments failed: ${e.message}`);
+              return;
+            }
             if (comments.some(c => c.body.includes(MARKER))) return;
 
             // One bullet per distinct problem: missing area, or missing type.
@@ -188,6 +202,11 @@ jobs:
               `Full guidance: [\`.github/labeler.yml\`](https://github.com/${owner}/${repo}/blob/main/.github/labeler.yml) (the one-stop taxonomy doc).`,
             ].join('\n');
 
-            await github.rest.issues.createComment({
-              owner, repo, issue_number: number, body,
-            });
+            try {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: number, body,
+              });
+            } catch (e) {
+              // Fail open: this workflow is advisory.
+              core.warning(`createComment failed: ${e.message}`);
+            }

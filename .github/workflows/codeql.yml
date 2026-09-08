@@ -17,11 +17,13 @@ permissions:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never on main: every push to main must leave a completed status behind, and
+  # the branch-protection contexts are reported from this workflow.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   analyze:
-    name: Analyze
+    name: CodeQL
     runs-on: ubuntu-latest
     permissions:
       security-events: write
