@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **list-sections subcommand:** New `policy-cli` subcommand exposing per-section index as JSON. ([#8](https://github.com/rcrsr/mcp-policy-server/pull/8))
+
 ### Changed
 
 - **Dependency and toolchain upgrade:** Bumped all dependencies to latest majors, replaced ESLint/Prettier with oxlint/oxfmt, and resolved all npm audit findings. ([#7](https://github.com/rcrsr/mcp-policy-server/pull/7))
