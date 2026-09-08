@@ -1,0 +1,56 @@
+# Pre-sets the native Issue Type so issues filed from the web UI land correctly
+# typed without scripts (gh CLI can set types since 2.94; forms also can).
+# Taxonomy: .github/labeler.yml header.
+name: Bug report
+description: A section resolves wrongly, a range expands incorrectly, the hook or CLI misbehaves
+type: Bug
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: >-
+        What you observed vs. what you expected, the symptom, not a guess at the
+        cause or the fix. If it is about handling untrusted hook input or
+        resolving user-supplied paths safely, file it as a Security issue
+        instead. Security wins over Bug.
+      placeholder: Include the exact § reference or command, the actual output, and the expected output.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >-
+        The minimal policy file, configuration, and tool call, CLI command, or
+        hook payload that triggers it, plus the mcp-policy-server and Node
+        versions.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Supporting context
+      description: >-
+        Optional. Exit codes, stack traces, `--debug` hook output, related
+        issues (#N), and pointers to relevant source. Do not propose a fix: the
+        codebase changes and a solution in the ticket ages.
+    validations:
+      required: false
+  - type: dropdown
+    id: areas
+    attributes:
+      label: Area(s)
+      description: >-
+        Where in the codebase the work lives, becomes the area:* labels at
+        triage (forms cannot apply per-answer labels).
+      multiple: true
+      options:
+        - server
+        - cli
+        - hook
+        - core
+        - docs
+        - dx
+    validations:
+      required: true

@@ -1,0 +1,58 @@
+# Pre-sets the native Issue Type. Security WINS over Bug/Feature/Chore when the
+# issue is fundamentally about handling untrusted input safely: the hook's
+# stdin payload from Claude Code, user-supplied file paths and globs in
+# configuration, agent-file resolution, path traversal in section extraction.
+# `type:Security` is the org-wide hardening sweep query. The hook runs on every
+# subagent dispatch and reads whatever the tool call carries, so this is a
+# first-class concern.
+name: Security
+description: Untrusted hook input, path traversal, config glob resolution, agent-file lookup
+type: Security
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Do not post working exploit payloads against a live project.**
+        Describe the class of issue and a minimal reproduction. If this is a
+        disclosed vulnerability in a published `@rcrsr/mcp-policy-server`
+        release, prefer GitHub's private vulnerability reporting over a public
+        issue.
+  - type: textarea
+    id: concern
+    attributes:
+      label: The concern
+      description: What a hook payload, configuration value, or policy file can reach that it should not, and the execution path involved.
+    validations:
+      required: true
+  - type: textarea
+    id: surface
+    attributes:
+      label: Threat surface
+      description: Which boundary is at stake (hook stdin parsing, agent-file resolution, policy glob expansion, section file reads, MCP tool arguments)?
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Supporting context
+      description: >-
+        Optional. Related issues (#N) and pointers to the execution path /
+        relevant source. What to look at. Do not post the fix here: the codebase
+        changes and a solution in the ticket ages.
+    validations:
+      required: false
+  - type: dropdown
+    id: areas
+    attributes:
+      label: Area(s)
+      description: Where in the codebase, becomes the area:* labels at triage.
+      multiple: true
+      options:
+        - server
+        - cli
+        - hook
+        - core
+        - docs
+        - dx
+    validations:
+      required: true

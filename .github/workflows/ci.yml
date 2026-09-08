@@ -1,0 +1,58 @@
+name: CI
+
+# No path filtering, deliberately. Both filtering mechanisms are incompatible
+# with required status checks: `paths-ignore` prevents the run entirely, so a
+# required context is never reported and the PR blocks forever; a job-level
+# `if:` gate reports "skipped", which never satisfies a required context.
+#
+# Every `uses:` in this repository pins a commit SHA with the release it belongs
+# to in a trailing comment. A major tag such as `@v5` is mutable: whoever
+# controls the action repository can retarget it, and the next run executes
+# different code with no diff here. The comment is what dependabot reads to
+# offer an upgrade, so it must stay accurate when a SHA changes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# Keyed on the ref, so a force-push to a PR branch cancels the superseded run
+# instead of leaving a 3-node matrix racing the new one. `github.workflow` is
+# in the group because a bare ref would collide with the other ref-keyed
+# workflows on this repository.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Never on main: every push to main must leave a completed status behind, and
+  # the branch-protection contexts are reported from this workflow.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Mirrors `engines.node` in package.json, which in turn mirrors what
+        # vitest supports. Odd majors are excluded there, so they are not
+        # tested here.
+        node-version: ['22', '24', '26']
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `check` is the whole gate: typecheck, lint, format, tests with coverage
+      # thresholds, and unused-dependency detection. `pretest:coverage` runs
+      # the build, so the compiled binaries in tests/binaries.test.ts are
+      # exercised too.
+      - name: Run checks
+        run: npm run check

@@ -1,0 +1,51 @@
+# Pre-sets the native Issue Type. Decision rule vs Feature: "would a user of
+# the server, CLI, or hook notice it in a release note?" No -> Chore. Covers
+# debt, refactors, test suites, perf, internals with no visible surface change.
+# An issue ABOUT handling untrusted input safely is Security, not Chore.
+# Taxonomy: .github/labeler.yml header.
+name: Chore
+description: 'Robustness work on existing machinery: debt, refactors, tests, performance, internals'
+type: Chore
+body:
+  - type: textarea
+    id: machinery
+    attributes:
+      label: What machinery, and what is wrong with it?
+      description: >-
+        The component involved (parser, resolver, indexer, handlers, CLI
+        runner, hook pipeline, checker) and the debt, fragility, or
+        inefficiency.
+    validations:
+      required: true
+  - type: textarea
+    id: why-now
+    attributes:
+      label: Why it matters
+      description: 'What it costs today, or what it blocks (perf numbers, flaky-test counts, blocked issues #N).'
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Supporting context
+      description: >-
+        Optional. Related issues (#N) and pointers to the relevant source. What
+        to look at. Do not prescribe the fix: the codebase changes and a
+        solution in the ticket ages.
+    validations:
+      required: false
+  - type: dropdown
+    id: areas
+    attributes:
+      label: Area(s)
+      description: Where in the codebase, becomes the area:* labels at triage.
+      multiple: true
+      options:
+        - server
+        - cli
+        - hook
+        - core
+        - docs
+        - dx
+    validations:
+      required: true

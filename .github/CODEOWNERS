@@ -1,0 +1,21 @@
+# Code owners for mcp-policy-server.
+#
+# Last matching pattern wins, so the high-blast-radius paths sit at the bottom.
+# Pair this with required review on those paths, which is a branch protection
+# setting and not visible in this file.
+
+# Everything, unless a later rule overrides.
+*                           @AndreBremer
+
+# Release and CI machinery. A change here can disable every other gate in the
+# repository, publish from an unverified tree, or widen a token's scope.
+/.github/                   @AndreBremer
+/.github/workflows/         @AndreBremer
+
+# Toolchain and lint policy. Changes here silently alter what CI accepts.
+/.oxlintrc.json             @AndreBremer
+/.oxfmtrc.json              @AndreBremer
+/lefthook.yml               @AndreBremer
+/knip.jsonc                 @AndreBremer
+/package.json               @AndreBremer
+/package-lock.json          @AndreBremer

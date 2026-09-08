@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Least privilege at the top; the release job re-grants exactly what it needs.
+permissions:
+  contents: read
+
+# Serialized, never cancelled. A publish interrupted part-way leaves the
+# registry holding half a release, which the pre-publish existence check then
+# reads as already-done on the retry.
+concurrency:
+  group: release-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # write: creates the GitHub Release. id-token: mints the OIDC token that
+      # npm trusted publishing exchanges for a short-lived publish credential
+      # and that the provenance attestation is signed against. There is no
+      # NPM_TOKEN secret: the package's npmjs.com settings name this
+      # repository and workflow file as its trusted publisher, and the
+      # registry authenticates the run from the OIDC claims alone.
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Trusted publishing needs npm 11.5.1 or later; earlier clients do not
+      # perform the OIDC exchange and fail with ENEEDAUTH. Node 24 bundles a
+      # recent npm 11, so this normally passes untouched; the upgrade is the
+      # fallback if the runner image lags.
+      - name: Ensure npm supports trusted publishing
+        run: |
+          if ! node -e "const [a,b,c]=process.versions.npm.split('.').map(Number);process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)"; then
+            echo "npm $(npm --version) predates trusted publishing; upgrading."
+            npm install -g npm@latest
+          fi
+          echo "npm $(npm --version)"
+
+      # Nothing else ties the tag to what actually ships: the publish below
+      # reads the version from package.json, so a `v0.7.0` tag pushed against
+      # a manifest still on 0.6.4 would publish 0.6.4 under a tag claiming
+      # otherwise, or no-op as already-published, and then cut a GitHub Release
+      # for it either way. Fail before anything is published.
+      - name: Verify the tag matches the manifest version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag ${GITHUB_REF_NAME} disagrees with package.json version ${PKG_VERSION}." >&2
+            echo "Bump the manifest or retag; refusing to publish." >&2
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json ${PKG_VERSION}."
+
+      # Explicit, even though `prepublishOnly` repeats it: the already-published
+      # branch below skips the publish entirely, and a GitHub Release must never
+      # be cut for a tree that was not checked.
+      - name: Check
+        run: npm run check
+
+      - name: Publish
+        run: |
+          # Without pipefail the `npm publish | tee` below reports tee's exit
+          # status, so a failed publish reads as success and the job goes on to
+          # cut a GitHub Release for a package that never shipped.
+          set -o pipefail
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "${NAME}@${VERSION}" version &>/dev/null; then
+            echo "Skipping $NAME@$VERSION (already published)"
+          else
+            echo "Publishing $NAME@$VERSION..."
+            PUBLISH_LOG=$(mktemp)
+            # The npm view check above races a concurrent publish: it can pass
+            # while another run is mid-publish of the same version. Treat the
+            # registry's own conflict response as already-published rather than
+            # failing the job.
+            #
+            # Matched on the specific conflict strings, never on a bare E403.
+            # npm returns E403 for a trusted-publisher mismatch (wrong repo,
+            # wrong workflow filename, environment not matching), an org policy
+            # change and lost package ownership as well as for a version
+            # conflict, so treating it as "already published" turns those auth
+            # failures into a silent green release.
+            if npm publish --provenance --access public 2>&1 | tee "$PUBLISH_LOG"; then
+              echo "Published $NAME@$VERSION"
+            elif grep -Eqi '(EPUBLISHCONFLICT|cannot publish over( the)? previously published versions|cannot modify pre-existing version)' "$PUBLISH_LOG"; then
+              echo "Skipping $NAME@$VERSION (already published, confirmed by registry)"
+            else
+              echo "Failed to publish $NAME@$VERSION"
+              cat "$PUBLISH_LOG"
+              rm -f "$PUBLISH_LOG"
+              exit 1
+            fi
+            rm -f "$PUBLISH_LOG"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub Release '$REF_NAME' already exists. Skipping creation."
+            exit 0
+          fi
+          gh release create "$REF_NAME" \
+            --title "$REF_NAME" \
+            --generate-notes

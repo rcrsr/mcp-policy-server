@@ -1,0 +1,47 @@
+name: Compatibility Check
+
+# Builds and tests against the latest published MCP SDK, so a breaking change
+# upstream surfaces here rather than in a user's install. The SDK is the one
+# runtime dependency whose API shape this package is coupled to: tool and
+# prompt request schemas, the transport interface, and the Server class.
+on:
+  schedule:
+    - cron: '0 6 * * *' # Daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Scheduled and manual runs only, so there is no superseded-run problem to
+# solve; the group exists to stop a manual dispatch racing the nightly run.
+concurrency:
+  group: compat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm install <pkg>@latest` rewrites package.json and the lockfile in
+      # the runner's tree only; nothing is committed. Latest rather than
+      # `npm update`, which stays inside the caret range and would miss the
+      # next major, which is the one this workflow exists to catch.
+      - name: Update the MCP SDK to latest
+        run: npm install @modelcontextprotocol/sdk@latest
+
+      - name: Typecheck
+        run: npm run check:types
+
+      - name: Build and test
+        run: npm test

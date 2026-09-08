@@ -1,0 +1,4 @@
+# Blank issues stay enabled: AI agents and the gh CLI file issues directly
+# (setting type via --type and Priority via GraphQL), and the enforcer
+# (issue-labels.yml) nudges anything under-labeled either way.
+blank_issues_enabled: true
