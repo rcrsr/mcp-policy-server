@@ -10,7 +10,7 @@ pre-commit:
   commands:
     oxfmt:
       priority: 1
-      glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,md}'
+      glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml}'
       run: npx oxfmt {staged_files}
       stage_fixed: true
     oxlint:
