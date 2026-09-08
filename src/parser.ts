@@ -4,7 +4,7 @@
  */
 
 import * as fs from 'fs';
-import { ParsedSection, SectionNotation } from './types';
+import { ParsedSection, SectionNotation } from './types.js';
 
 // Regex patterns for section notation parsing
 // Prefix format: starts with letter, then letters/digits/hyphens (e.g., CODE, CODE2, APP-HOOK)
@@ -25,31 +25,6 @@ const SECTION_MARKER_PATTERN = /^##?#? \{§/;
 export const PREFIX_ONLY_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)$/;
 
 // Sections are sorted alphabetically by prefix, then numerically by section number
-
-/**
- * Extract base prefix from extended prefix notation
- *
- * Hyphenated extensions (APP-HOOK, APP-PLG, etc.) are reduced to
- * their base prefix for file resolution. Base prefixes are returned
- * unchanged.
- *
- * @param prefix - Policy prefix (META, SYS, APP, USER, APP-HOOK, APP-PLG, APP-TPL, SYS-TPL)
- * @returns Base prefix without extension (APP-HOOK → APP, META → META)
- *
- * @example
- * ```typescript
- * getBasePrefix('APP-HOOK') // Returns: 'APP'
- * getBasePrefix('META')     // Returns: 'META'
- * getBasePrefix('SYS-TPL')  // Returns: 'SYS'
- * ```
- */
-export function getBasePrefix(prefix: string): string {
-  const hyphenIndex = prefix.indexOf('-');
-  if (hyphenIndex !== -1) {
-    return prefix.substring(0, hyphenIndex);
-  }
-  return prefix;
-}
 
 /**
  * Parse section notation into prefix, section number, and optional file
@@ -201,21 +176,38 @@ export function expandRange(input: string): SectionNotation[] {
  */
 export function extractSection(filePath: string, prefix: string, sectionNum: string): string {
   const content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
+  return extractSectionFromLines(content.split('\n'), prefix, sectionNum);
+}
 
+/**
+ * Extract section content from an already-split line array
+ *
+ * Same extraction rules as extractSection, but operates on lines already
+ * read into memory. Callers that extract several sections from one file
+ * (e.g. buildSectionDetails) use this to read and split the file once.
+ *
+ * @param lines - File content split on newlines
+ * @param prefix - Policy prefix (APP, META, SYS, USER, etc.)
+ * @param sectionNum - Section number (7, 4.1, 2.3.1, etc.)
+ * @returns Extracted section content including header, empty string if not found
+ */
+export function extractSectionFromLines(
+  lines: string[],
+  prefix: string,
+  sectionNum: string
+): string {
   const isSubsection = sectionNum.includes('.');
 
   if (isSubsection) {
     // Subsection (§APP.4.1): stop at any next § marker
     const startPattern = new RegExp(`^###? \\{§${prefix}\\.${sectionNum.replace(/\./g, '\\.')}\\}`);
-    const stopPattern = SECTION_MARKER_PATTERN;
-    return extractRange(lines, startPattern, stopPattern);
-  } else {
-    // Whole section (§APP.4): stop at next whole section, {§END}, or EOF
-    const startPattern = new RegExp(`^## \\{§${prefix}\\.${sectionNum}\\}`);
-    const stopPattern = new RegExp(`^## \\{§${prefix}\\.[0-9]|^\\{§END\\}`);
-    return extractRange(lines, startPattern, stopPattern);
+    return extractRange(lines, startPattern, SECTION_MARKER_PATTERN);
   }
+
+  // Whole section (§APP.4): stop at next whole section, {§END}, or EOF
+  const startPattern = new RegExp(`^## \\{§${prefix}\\.${sectionNum}\\}`);
+  const stopPattern = new RegExp(`^## \\{§${prefix}\\.[0-9]|^\\{§END\\}`);
+  return extractRange(lines, startPattern, stopPattern);
 }
 
 /**

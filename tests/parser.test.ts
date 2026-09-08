@@ -5,7 +5,6 @@
 
 import * as path from 'path';
 import {
-  getBasePrefix,
   parseSectionNotation,
   expandRange,
   extractSection,
@@ -24,36 +23,6 @@ const HOOKS_POLICY = path.join(FIXTURES_DIR, 'policy-app-hooks.md');
 const EMPTY_POLICY = path.join(FIXTURES_DIR, 'policy-empty.md');
 
 describe('parser', () => {
-  describe('getBasePrefix', () => {
-    it('should return base prefix unchanged for non-hyphenated prefix', () => {
-      expect(getBasePrefix('META')).toBe('META');
-      expect(getBasePrefix('SYS')).toBe('SYS');
-      expect(getBasePrefix('APP')).toBe('APP');
-      expect(getBasePrefix('USER')).toBe('USER');
-    });
-
-    it('should extract base prefix from hyphenated prefix', () => {
-      expect(getBasePrefix('APP-HOOK')).toBe('APP');
-      expect(getBasePrefix('APP-PLG')).toBe('APP');
-      expect(getBasePrefix('APP-TPL')).toBe('APP');
-      expect(getBasePrefix('SYS-TPL')).toBe('SYS');
-    });
-
-    it('should handle multi-part hyphenated prefixes correctly', () => {
-      expect(getBasePrefix('APP-HOOK-EXTRA')).toBe('APP');
-      expect(getBasePrefix('SYS-CUSTOM-TEMPLATE')).toBe('SYS');
-    });
-
-    it('should return empty string for empty input', () => {
-      expect(getBasePrefix('')).toBe('');
-    });
-
-    it('should handle single character prefix', () => {
-      expect(getBasePrefix('A')).toBe('A');
-      expect(getBasePrefix('A-B')).toBe('A');
-    });
-  });
-
   describe('parseSectionNotation', () => {
     describe('without fileMap', () => {
       it('should parse valid section notation with single number', () => {

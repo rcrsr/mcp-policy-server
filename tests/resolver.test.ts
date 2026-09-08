@@ -405,3 +405,42 @@ describe('resolver (index-based)', () => {
     });
   });
 });
+
+describe('resolver lenient mode', () => {
+  const fixturesDir = path.resolve(__dirname, 'fixtures', 'sample-policies');
+  let index: SectionIndex;
+
+  beforeAll(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    index = buildSectionIndex({
+      files: [path.join(fixturesDir, 'policy-meta.md'), path.join(fixturesDir, 'policy-sys.md')],
+      baseDir: fixturesDir,
+    });
+  });
+
+  it('throws on invalid notation when strict', () => {
+    expect(() => gatherSectionsWithIndex(['§NOPE'], index, fixturesDir)).toThrow(
+      /Invalid section notation "§NOPE"/
+    );
+  });
+
+  it('skips invalid notation and unresolvable sections with warnings when lenient', () => {
+    const warnings: string[] = [];
+    const gathered = gatherSectionsWithIndex(['§NOPE', '§META.99', '§META.1'], index, fixturesDir, {
+      lenient: true,
+      onWarning: (m) => warnings.push(m),
+    });
+
+    expect(Array.from(gathered.keys())).toEqual(['§META.1']);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toMatch(/^Invalid section notation "§NOPE"/);
+    expect(warnings[1]).toMatch(/^Failed to resolve section "§META\.99"/);
+  });
+
+  it('works lenient without an onWarning callback', () => {
+    const content = fetchSectionsWithIndex(['§META.99', '§SYS.1'], index, fixturesDir, {
+      lenient: true,
+    });
+    expect(content).toContain('## {§SYS.1}');
+  });
+});

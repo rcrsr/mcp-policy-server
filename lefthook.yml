@@ -1,0 +1,36 @@
+# Lefthook git hooks
+# Docs: https://lefthook.dev/configuration/
+#
+# Skip with `LEFTHOOK=0 git <command>` or `git <command> --no-verify`.
+
+# Format before lint. The reverse order lets the formatter undo a lint fix,
+# so the commit lands with the lint fix reverted and nothing reports it.
+pre-commit:
+  piped: true
+  commands:
+    oxfmt:
+      priority: 1
+      glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,md}'
+      run: npx oxfmt {staged_files}
+      stage_fixed: true
+    oxlint:
+      priority: 2
+      glob: '*.{ts,tsx}'
+      run: npx oxlint --config .oxlintrc.json --fix {staged_files}
+      stage_fixed: true
+    typecheck:
+      priority: 3
+      glob: '*.{ts,tsx}'
+      run: npx tsc-files -p tsconfig.test.json --noEmit {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    typecheck:
+      run: npm run check:types
+    lint:
+      run: npm run check:lint
+    format:
+      run: npm run check:format
+    test:
+      run: npm run test:coverage

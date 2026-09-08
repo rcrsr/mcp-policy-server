@@ -43,43 +43,6 @@ export interface ParsedSection {
 }
 
 /**
- * Fully resolved section with content
- *
- * Extends ParsedSection with the original notation, resolved file path,
- * and extracted content. Used after successful section extraction.
- *
- * @example
- * ```typescript
- * const resolved: ResolvedSection = {
- *   notation: '§APP.7',
- *   prefix: 'APP',
- *   section: '7',
- *   file: 'policy-application.md',
- *   content: '## {§APP.7}...'
- * };
- * ```
- */
-export interface ResolvedSection extends ParsedSection {
-  /**
-   * Original section notation with § symbol
-   * Examples: "§APP.7", "§META.1", "§SYS.5.2"
-   */
-  notation: string;
-
-  /**
-   * Policy file path (narrows null to string)
-   * File is guaranteed to be resolved for this interface
-   */
-  file: string;
-
-  /**
-   * Extracted section content from policy file
-   * Includes section header and all content up to next section marker
-   */
-  content: string;
-}
-
-/**
  * Section notation format: §PREFIX.NUMBER (whole sections) or §PREFIX.NUMBER.SUBSECTION[.SUBSECTION...] (subsections)
  * Examples: "§APP.7" (whole section), "§APP.7.1" (subsection), "§APP.7.1.2.3.4" (deeply nested subsection)
  * Supports arbitrary nesting depth
@@ -159,7 +122,7 @@ export interface SectionDetail {
  * Record describing a section that was skipped while building
  * list-sections output, with the reason it could not be included.
  */
-export interface SectionDetailSkip {
+interface SectionDetailSkip {
   id: string;
   reason: string;
 }
@@ -205,7 +168,7 @@ export interface IndexState {
  * Gathered section with all required fields
  *
  * Used in resolver Map to store sections during recursive resolution.
- * Similar to ResolvedSection but without notation field and with
+ * Carries the resolved file and extracted content for a section, with
  * stricter guarantees that all fields are populated.
  *
  * @example
@@ -301,52 +264,9 @@ export class ConfigError extends Error {
 }
 
 /**
- * Section not found error exception
- *
- * Thrown when a requested section cannot be located in any
- * discovered policy file. Indicates either invalid section
- * reference or missing documentation.
- *
- * @example
- * ```typescript
- * throw new SectionNotFoundError(
- *   'Section not found: §APP.99 in policy-application.md'
- * );
- * ```
- */
-export class SectionNotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SectionNotFoundError';
-    Object.setPrototypeOf(this, SectionNotFoundError.prototype);
-  }
-}
-
-/**
- * Validation error exception
- *
- * Thrown when section validation fails, such as duplicate
- * section IDs across policy files or invalid section format.
- *
- * @example
- * ```typescript
- * throw new ValidationError(
- *   'Duplicate section §APP.7 found in policy-application.md and policy-app-extra.md'
- * );
- * ```
- */
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-    Object.setPrototypeOf(this, ValidationError.prototype);
-  }
-}
-
-/**
  * Severity levels for policy file format issues
  */
-export type CheckSeverity = 'error' | 'warning';
+type CheckSeverity = 'error' | 'warning';
 
 /**
  * Single issue found during policy file format check

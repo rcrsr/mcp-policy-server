@@ -13,8 +13,8 @@ import {
   handleListSources,
   estimateTokens,
   chunkContent,
-  expandSectionsWithIndex,
 } from '../src/handlers';
+import { expandSectionsWithIndex } from '../src/operations';
 import { ServerConfig } from '../src/config';
 import { initializeIndexState, closeIndexState } from '../src/indexer';
 import { IndexState } from '../src/types';

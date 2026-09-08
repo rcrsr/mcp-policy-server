@@ -4,12 +4,16 @@
  */
 
 import * as fs from 'fs';
-import { expandRange, findEmbeddedReferences, PREFIX_ONLY_PATTERN } from './parser.js';
 import { fetchSectionsWithIndex, resolveSectionLocationsWithIndex } from './resolver.js';
-import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { ServerConfig } from './config.js';
 import { ensureFreshIndex } from './indexer.js';
-import { IndexState, SectionIndex } from './types.js';
+import { IndexState } from './types.js';
+import {
+  expandSectionsWithIndex,
+  extractReferences,
+  formatSourceList,
+  validateReferences,
+} from './operations.js';
 
 /**
  * Validate that array parameter is non-empty
@@ -90,46 +94,6 @@ function isValidateReferencesArgs(args: unknown): args is ValidateReferencesArgs
     'references' in args &&
     Array.isArray((args as ValidateReferencesArgs).references)
   );
-}
-
-/**
- * Expand section notations including prefix-only shorthand
- *
- * Handles three notation types:
- * - Prefix-only (§APP): Expands to all sections with that prefix from index
- * - Range (§APP.4.1-3): Expands via expandRange()
- * - Single section (§APP.7): Returns as-is via expandRange()
- *
- * @param sections - Array of section notations to expand
- * @param index - Section index for prefix-only lookups
- * @returns Expanded array of section notations
- *
- * @example
- * ```typescript
- * // Prefix-only expands to all matching sections
- * expandSectionsWithIndex(['§FE'], index)
- * // Returns: ['§FE.1', '§FE.2', '§FE.2.1', '§FE.3']
- *
- * // Mixed notation types
- * expandSectionsWithIndex(['§APP', '§META.2-3'], index)
- * // Returns: ['§APP.1', '§APP.2', '§META.2', '§META.3']
- * ```
- */
-export function expandSectionsWithIndex(sections: string[], index: SectionIndex): string[] {
-  return sections.flatMap((s) => {
-    const prefixMatch = s.match(PREFIX_ONLY_PATTERN);
-    if (prefixMatch) {
-      const prefix = prefixMatch[1];
-      const matchingSections = Array.from(index.sectionMap.keys()).filter((section) =>
-        section.startsWith(`§${prefix}.`)
-      );
-      if (matchingSections.length === 0) {
-        throw new Error(`No sections found for prefix: ${prefix}`);
-      }
-      return matchingSections;
-    }
-    return expandRange(s);
-  });
 }
 
 /**
@@ -458,23 +422,14 @@ export function handleExtractReferences(args: unknown, _config: ServerConfig): T
   const { file_path } = args;
 
   try {
-    // Read file content
     const content = fs.readFileSync(file_path, 'utf8');
-
-    // Extract all § references
-    const references = findEmbeddedReferences(content);
-
-    // Expand ranges before returning
-    const expandedRefs = references.flatMap((ref: string) => expandRange(ref));
-
-    // Return unique references, sorted
-    const uniqueRefs = Array.from(new Set(expandedRefs)).sort();
+    const references = extractReferences(content);
 
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(uniqueRefs, null, 2),
+          text: JSON.stringify(references, null, 2),
         },
       ],
     };
@@ -525,44 +480,7 @@ export function handleValidateReferences(
   const index = ensureFreshIndex(indexState, config);
 
   try {
-    // Validate section uniqueness using index
-    const validationResult = validateFromIndex(index);
-
-    const result = {
-      valid: true,
-      checked: references.length,
-      invalid: [] as string[],
-      details: [] as string[],
-    };
-
-    // Check if there are duplicate sections globally
-    if (!validationResult.valid) {
-      result.valid = false;
-      result.details.push('Global validation errors:');
-      result.details.push(formatDuplicateErrors(validationResult.errors ?? []));
-    }
-
-    // Check each reference exists
-    const expandedRefs = expandSectionsWithIndex(references, index);
-    for (const ref of expandedRefs) {
-      // Check if section is in duplicates map (error case)
-      if (index.duplicates.has(ref)) {
-        result.valid = false;
-        result.invalid.push(ref);
-        const files = index.duplicates.get(ref)!;
-        result.details.push(
-          `${ref}: Found in multiple files:\n${files.map((f) => `  - ${f}`).join('\n')}`
-        );
-        continue;
-      }
-
-      // Check if section exists in sectionMap
-      if (!index.sectionMap.has(ref)) {
-        result.valid = false;
-        result.invalid.push(ref);
-        result.details.push(`${ref}: Section not found in policy files`);
-      }
-    }
+    const result = validateReferences(references, index);
 
     return {
       content: [
@@ -603,22 +521,7 @@ export function handleListSources(
   // Ensure index is fresh (lazy rebuild if files changed)
   const index = ensureFreshIndex(indexState, config);
 
-  const sourceList = `# Policy Documentation Files
-
-${config.files.map((file) => `- ${file}`).join('\n')}
-
-## Index Statistics
-
-- Files indexed: ${index.fileCount}
-- Sections indexed: ${index.sectionCount}
-- Duplicate sections: ${index.duplicates.size}
-- Last indexed: ${index.lastIndexed.toISOString()}
-
-## Format
-
-Sections use § prefix: §APP.7, §SYS.5
-Ranges expand: §APP.4.1-3 → §APP.4.1, §APP.4.2, §APP.4.3
-`;
+  const sourceList = formatSourceList(config, index);
 
   return {
     content: [
