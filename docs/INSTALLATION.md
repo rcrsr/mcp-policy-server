@@ -4,7 +4,7 @@ This guide covers installing the MCP Policy Server for all four integration meth
 
 ## Prerequisites
 
-- Node.js 18 or later
+- Node.js 22.12 or later (CI tests Node 22, 24, and 26)
 - Claude Code (for Plugin, Hook, and MCP methods) or other MCP-compatible client
 
 ## Choose Your Method
@@ -201,6 +201,7 @@ npm install -g @rcrsr/mcp-policy-server
 policy-cli fetch-policies document.md --config "./policies/*.md"
 policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
 policy-cli list-sources --config "./policies/*.md"
+policy-cli check ./policies/policy-example.md
 ```
 
 ---

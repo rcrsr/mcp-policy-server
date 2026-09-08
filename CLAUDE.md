@@ -14,7 +14,7 @@ npm run fix:format && npm run fix:lint   # auto-fix format and lint
 
 **Binaries:**
 - `policy-hook` - Claude Code PreToolUse hook (reads stdin JSON, outputs hook response)
-- `policy-cli` - CLI with subcommands: fetch-policies, validate-references, extract-references, list-sources, resolve-references
+- `policy-cli` - CLI with subcommands: fetch-policies, validate-references, extract-references, list-sources, list-sections, resolve-references, check
 
 ## Architecture
 
@@ -50,7 +50,9 @@ point belongs in `operations.ts`.
 ## Key Behaviors
 
 - Section extraction: whole sections (§DOC.4) stop at next same-prefix section, {§END}, or EOF
-- Subsections (§DOC.4.1) stop at any next § marker
+- Subsections (§DOC.4.1) stop at the next `##`/`###` heading starting with `{§`, or EOF; `{§END}` does not stop them
 - Recursive resolution follows embedded § references until exhausted
 - Parent-child deduplication: §DOC.4 supersedes §DOC.4.1
-- Response chunking at section boundaries (10000 token limit)
+- Response chunking at section boundaries (10000 token limit, MCP `fetch_policies` only)
+- File watching and lazy index rebuild apply to the MCP server only; hook and CLI rebuild the index per invocation
+- `llms.txt` at the root mirrors the tool surface; update it when tools, subcommands, or notation change

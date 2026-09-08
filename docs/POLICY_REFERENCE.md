@@ -18,8 +18,8 @@ The § (section sign) notation references specific policy documentation sections
 
 **Components:**
 - `§` - Required section symbol (U+00A7)
-- `PREFIX` - Uppercase identifier: starts with letter, followed by letters or digits (e.g., CODE, CODE2, API3)
-- `.N` - Dot-separated section numbers (numeric only)
+- `PREFIX` - Uppercase identifier: starts with a letter, followed by letters or digits. Hyphen-separated segments are allowed, each starting with a letter (e.g., CODE, CODE2, API3, CODE-PY)
+- `.N` - Dot-separated section numbers (numeric only, any depth)
 - `−N` - Optional range end (hyphen followed by number)
 
 ### Format Rules
@@ -40,11 +40,16 @@ The § (section sign) notation references specific policy documentation sections
 Section content...
 ```
 
-**Subsections (§PREFIX.N.N):** Can use `##` or `###` heading level.
+**Subsections (§PREFIX.N.N...):** Use `###` heading level at every depth.
 ```markdown
 ### {§PREFIX.1.1}
 Subsection content...
+
+### {§PREFIX.1.1.1}
+Deeper subsection content...
 ```
+
+The marker needs exactly one space between the hashes and `{§`. Headings at `####` or deeper are not indexed. `policy-cli check` reports a subsection written with `##` as `WRONG_HEADING_LEVEL`.
 
 **Examples:**
 - `§PREFIX.1` - Top-level section
@@ -54,11 +59,14 @@ Subsection content...
 
 Ranges expand to all sections between start and end (inclusive).
 
-**Subsection ranges (§PREFIX.N.N-N):**
+**Subsection ranges (§PREFIX.N.N-N or §PREFIX.N.N-N.N):**
 ```
 §PREFIX.1.1-3 expands to §PREFIX.1.1, §PREFIX.1.2, §PREFIX.1.3
+§PREFIX.1.1-1.3 expands to §PREFIX.1.1, §PREFIX.1.2, §PREFIX.1.3 (full form, parent repeated)
 §PREFIX.2.5-8 expands to §PREFIX.2.5, §PREFIX.2.6, §PREFIX.2.7, §PREFIX.2.8
 ```
+
+Ranges work on whole sections and first-level subsections only. `§PREFIX.1.1.1-3` is not expanded.
 
 **Section ranges (§PREFIX.N-N):**
 ```
@@ -79,9 +87,9 @@ Ranges expand to all sections between start and end (inclusive).
 - `§PREFIX.1.1-5` - Subsection range (expands to §PREFIX.1.1 through §PREFIX.1.5)
 
 **Invalid ranges:**
-- `§PREFIX.1-3.2` - Mixed depth (not parsed as range)
-- `§PREFIX.1.1-5.3` - Different parents (not parsed as range)
-- `§PREFIX.5-2` - Backwards (returns empty result, no error)
+- `§PREFIX.1-3.2` - Mixed depth (not parsed as a range; fails as a literal section ID)
+- `§PREFIX.1.1-5.3` - Different parents (not parsed as a range; fails as a literal section ID)
+- `§PREFIX.5-2` - Backwards (expands to nothing; no error)
 
 ## Prefix-Only Notation
 
@@ -114,12 +122,12 @@ Prefix-only references expand to all sections with that prefix:
 
 This fetches all design and API policies without listing each section.
 
-**In agent files (hook method):**
+**In agent files (Plugin and Hook methods):**
 ```markdown
-["§TS", "§PY", "§BASIC.1-8"]
+Follow all §TS and §PY policies, plus §BASIC.1-8.
 ```
 
-Combines prefix-only (`§TS`, `§PY`) with range notation (`§BASIC.1-8`).
+Combines prefix-only (`§TS`, `§PY`) with range notation (`§BASIC.1-8`). When an agent file names both `§TS` and `§TS.2`, the specific reference is dropped because the prefix-only reference already covers it.
 
 ### Special Case: §END
 
@@ -169,8 +177,12 @@ Fetching §PREFIX.1 returns all four sections.
 
 The server removes duplicates:
 
-- Parent sections include children (§PREFIX.1 includes §PREFIX.1.1, §PREFIX.1.2)
+- Parent sections include children (§PREFIX.1 includes §PREFIX.1.1, §PREFIX.1.2). If both are requested, only the parent is returned
 - Multiple references to same section fetched once
+
+### Resolution Failures
+
+Resolution stops with an error when any referenced section, including one reached through a chain, is missing or defined in more than one file. The error names the failing section and the section that referenced it. The MCP tool returns the error; the hook denies the tool call; the CLI exits 1.
 
 ## Parent-Child Relationships
 
@@ -192,14 +204,17 @@ Fetching §PREFIX.1 returns all child content (§PREFIX.1.1, §PREFIX.1.2, §PRE
 ### Stopping Rules
 
 **Whole sections (§PREFIX.N):**
-- Stop at next whole section of same prefix (§PREFIX.M)
-- Stop at {§END} marker
+- Stop at next `## {§PREFIX.M}` heading with the same prefix
+- Stop at a `{§END}` line
 - Stop at end of file
+- Do not stop at a `##` heading with a different prefix, or at any `###` heading
 
 **Subsections (§PREFIX.N.N):**
-- Stop at next § marker (any level)
-- Stop at {§END} marker
+- Stop at next `##` or `###` heading that starts with `{§` (any prefix, any level)
 - Stop at end of file
+- Do not stop at `{§END}`
+
+Stop markers inside fenced code blocks are ignored for both kinds.
 
 **End marker example:**
 ```markdown
@@ -211,8 +226,10 @@ Subsection content...
 
 {§END}
 
-This content is not part of §PREFIX.1.1 or §PREFIX.1
+Trailing notes.
 ```
+
+Fetching §PREFIX.1 returns everything above `{§END}`. Fetching §PREFIX.1.1 returns from its heading to the end of the file, including `{§END}` and the trailing notes. Place `{§END}` only where a `§` heading would otherwise follow, or end the file there.
 
 ## Section Sorting
 
@@ -240,7 +257,7 @@ Response: §ABC.1, §PREFIX.1, §XYZ.1
 
 ## Validation
 
-The `mcp__policy-server__validate_references` tool checks format, prefix existence, section existence, and uniqueness.
+The `mcp__policy-server__validate_references` tool and `policy-cli validate-references` check section existence and uniqueness. Ranges and prefix-only references are expanded first; `checked` counts the references as given, `invalid` lists expanded IDs. `valid` is also `false` when any duplicate section ID exists anywhere in the configured files, even if none of the requested references touch it; the duplicate is reported under `details`.
 
 **Valid response:**
 ```json
@@ -270,6 +287,8 @@ The `mcp__policy-server__validate_references` tool checks format, prefix existen
 | Lowercase prefix | `§prefix.1` | `§PREFIX.1` |
 | Invalid characters | `§PREFIX.1a` | `§PREFIX.1` |
 | Unknown prefix | `§UNKNOWN.1` | `§PREFIX.1` |
+
+Lowercase or malformed text is not recognized as a reference at all; the extractor skips it silently. An unknown prefix or number is extracted and then reported as `Section not found in policy files`.
 
 ## Examples
 
@@ -337,4 +356,6 @@ Number sections sequentially and avoid renumbering:
 
 ## Code Blocks and Examples
 
-Section markers in code blocks are ignored during validation but preserved in extracted content. This allows you to include examples without triggering duplicate warnings.
+Section markers and § references inside fenced code blocks or inline backticks are ignored when indexing, extracting references, and following embedded references. They are preserved verbatim in fetched content. This allows you to include examples without triggering duplicate warnings or unwanted resolution.
+
+Run `policy-cli check <file>` to confirm every fence is closed. An unclosed fence hides every section after it.

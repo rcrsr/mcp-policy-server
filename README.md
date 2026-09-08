@@ -259,11 +259,15 @@ Use `policy-cli` for scripts, CI/CD, or non-MCP integrations.
 
 ```bash
 policy-cli fetch-policies <file>        # Fetch policies for § refs in a file
-policy-cli validate-references <ref>... # Validate § refs exist
-policy-cli extract-references <file>    # Extract § refs from a file
-policy-cli list-sources                 # List available policy files
+policy-cli validate-references <ref>... # Validate § refs exist (exit 1 if any invalid)
+policy-cli extract-references <file>    # Extract § refs from a file as JSON
+policy-cli list-sources                 # List available policy files and prefixes
+policy-cli list-sections                # List every section as JSON (id, file, bytes, refs)
 policy-cli resolve-references <ref>...  # Map § refs to source files
+policy-cli check <file>                 # Lint a policy file (exit 1 on format errors)
 ```
+
+All subcommands except `extract-references` and `check` need `--config` (or `MCP_POLICY_CONFIG`).
 
 ### Extract Policies from a File
 
@@ -282,6 +286,9 @@ echo "Follow these policies: $POLICIES" | your-llm-tool
 
 # Validate references before use
 npx -p @rcrsr/mcp-policy-server policy-cli validate-references §DOC.1 §DOC.2 --config "./policies/*.md"
+
+# Lint a policy file in CI
+npx -p @rcrsr/mcp-policy-server policy-cli check ./policies/policy-example.md
 ```
 
 ---
@@ -303,6 +310,8 @@ These tools are available when using [Method 3: MCP Server](#method-3-mcp-server
 {"sections": ["§PREFIX.1", "§PREFIX.2"]}
 ```
 
+Responses larger than roughly 10000 tokens are split at section boundaries. The response then ends with a continuation notice; call `fetch_policies` again with the same `sections` and the given `continuation` token.
+
 ## Use Cases
 
 - **Code Review**: Reference coding standards, style guides, architecture principles
@@ -317,6 +326,7 @@ These tools are available when using [Method 3: MCP Server](#method-3-mcp-server
 - [Configuration Reference](docs/CONFIGURATION_REFERENCE.md) - Config options for hooks, MCP, and CLI
 - [Policy Reference](docs/POLICY_REFERENCE.md) - § notation syntax
 - [Best Practices](docs/BEST_PRACTICES.md) - Patterns and strategies
+- [llms.txt](llms.txt) - Condensed operating guide for LLM agents ([llmstxt.org](https://llmstxt.org/) format)
 
 ## License
 
