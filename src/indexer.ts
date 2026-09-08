@@ -79,7 +79,7 @@ function tryExtractSections(filePath: string): SectionNotation[] | null {
  * // Returns: ['§APP.1', '§APP.2', '§APP.2.1', '§APP.3']
  * ```
  */
-export function extractAllSections(filePath: string): SectionNotation[] {
+function extractAllSections(filePath: string): SectionNotation[] {
   const content = fs.readFileSync(filePath, 'utf8');
   const sections: SectionNotation[] = [];
 
@@ -127,10 +127,7 @@ export function extractAllSections(filePath: string): SectionNotation[] {
  * //         /path/file2.md
  * ```
  */
-export function validateIndex(
-  index: SectionIndex,
-  fileSections: Map<string, SectionNotation[]>
-): void {
+function validateIndex(index: SectionIndex, fileSections: Map<string, SectionNotation[]>): void {
   const allSections = new Map<SectionNotation, Set<string>>();
 
   // Build map of section → all files containing it (using Set to deduplicate)
@@ -441,7 +438,7 @@ export function closeIndexState(state: IndexState): void {
  * // After 300ms: [WATCH] Debounce period ended, index marked stale
  * ```
  */
-export function handleFileChange(state: IndexState, filePath: string, eventType: string): void {
+function handleFileChange(state: IndexState, filePath: string, eventType: string): void {
   console.error(`[WATCH] ${filePath} ${eventType}, scheduling rebuild`);
   state.stale = true;
 

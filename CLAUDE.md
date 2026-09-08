@@ -8,7 +8,8 @@ MCP server and CLI for policy documentation via § notation. Provides automatic 
 npm run build              # Compile TypeScript
 npm test                   # Run Vitest tests
 npm start                  # Start MCP server
-npm run pre-commit:fix     # oxfmt, oxlint --fix, typecheck
+npm run check              # types, lint, format, coverage, knip (full CI gate)
+npm run fix:format && npm run fix:lint   # auto-fix format and lint
 ```
 
 **Binaries:**

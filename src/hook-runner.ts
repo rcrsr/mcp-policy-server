@@ -17,7 +17,7 @@ import { SectionIndex } from './types.js';
 /**
  * Shape of the PreToolUse payload the hook reads from stdin
  */
-export interface HookInput {
+interface HookInput {
   tool_input?: {
     subagent_type?: string;
     prompt?: string;

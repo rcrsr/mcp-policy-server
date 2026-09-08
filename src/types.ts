@@ -122,7 +122,7 @@ export interface SectionDetail {
  * Record describing a section that was skipped while building
  * list-sections output, with the reason it could not be included.
  */
-export interface SectionDetailSkip {
+interface SectionDetailSkip {
   id: string;
   reason: string;
 }
@@ -266,7 +266,7 @@ export class ConfigError extends Error {
 /**
  * Severity levels for policy file format issues
  */
-export type CheckSeverity = 'error' | 'warning';
+type CheckSeverity = 'error' | 'warning';
 
 /**
  * Single issue found during policy file format check

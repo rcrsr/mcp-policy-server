@@ -36,7 +36,7 @@ export const SERVER_NAME = 'policy-server';
 export const SERVER_VERSION: string = packageJson.version;
 
 /** Instructions surfaced to clients on initialization */
-export const SERVER_INSTRUCTIONS =
+const SERVER_INSTRUCTIONS =
   'Use fetch_policies for § references. Pass sections array with § prefix. Ranges auto-expand. Embedded refs resolve recursively. Only fetch when needed.';
 
 const SECTIONS_PROPERTY = {
