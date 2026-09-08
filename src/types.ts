@@ -145,6 +145,17 @@ export interface SectionIndex {
 }
 
 /**
+ * Per-section detail record for list-sections output
+ */
+export interface SectionDetail {
+  id: SectionNotation;
+  prefix: string;
+  file: string;
+  byteLength: number;
+  refs: SectionNotation[];
+}
+
+/**
  * Index state with staleness tracking and file watchers
  *
  * Manages the section index lifecycle including lazy rebuilds

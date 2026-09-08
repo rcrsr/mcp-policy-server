@@ -3,12 +3,14 @@
  */
 import {
   buildSectionIndex,
+  buildSectionDetails,
   ensureFreshIndex,
   initializeIndexState,
   closeIndexState,
 } from '../src/indexer.js';
 import { SectionIndex } from '../src/types.js';
 import { ServerConfig } from '../src/config.js';
+import { extractSection } from '../src/parser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -335,5 +337,103 @@ describe('Index Optimization', () => {
         closeIndexState(state);
       }
     });
+  });
+});
+
+describe('buildSectionDetails', () => {
+  const testDir = path.join(__dirname, 'fixtures', 'section-details-test');
+  const testFile = path.join(testDir, 'test.md');
+
+  let config: ServerConfig;
+
+  beforeEach(() => {
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      testFile,
+      [
+        '## {§TEST.1}',
+        'See §TEST.2 for details.',
+        '',
+        '```',
+        'Example referencing §TEST.4 inside a fence, should be excluded.',
+        '```',
+        '',
+        'Also see `§TEST.3` inline code, should be excluded.',
+        '',
+        '## {§TEST.2}',
+        'No references here.',
+        '',
+        '## {§TEST.3}',
+        'Nothing to see.',
+      ].join('\n')
+    );
+
+    config = {
+      files: [testFile],
+      baseDir: testDir,
+      maxChunkTokens: 10000,
+    };
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test('returns one record per section with id, prefix, file, byteLength, refs', () => {
+    const index = buildSectionIndex(config);
+    const details = buildSectionDetails(index);
+
+    expect(details.length).toBe(3);
+    for (const detail of details) {
+      expect(detail.id).toBeDefined();
+      expect(detail.prefix).toBe('TEST');
+      expect(detail.file).toBe(testFile);
+      expect(detail.byteLength).toBeGreaterThan(0);
+      expect(Array.isArray(detail.refs)).toBe(true);
+    }
+  });
+
+  test('byteLength matches Buffer.byteLength of extracted section content', () => {
+    const index = buildSectionIndex(config);
+    const details = buildSectionDetails(index);
+
+    const section2 = details.find((d) => d.id === '§TEST.2');
+    expect(section2).toBeDefined();
+    const expectedContent = extractSection(testFile, 'TEST', '2');
+    expect(section2!.byteLength).toBe(Buffer.byteLength(expectedContent, 'utf8'));
+  });
+
+  test('excludes § references inside fenced code blocks from refs', () => {
+    const index = buildSectionIndex(config);
+    const details = buildSectionDetails(index);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    // §TEST.4 appears only inside the fenced code block, so its absence
+    // from refs proves the fenced occurrence was actually excluded
+    // (not merely deduped away with a real occurrence elsewhere).
+    expect(section1!.refs).not.toContain('§TEST.4');
+  });
+
+  test('excludes § references inside inline code from refs', () => {
+    const index = buildSectionIndex(config);
+    const details = buildSectionDetails(index);
+
+    const section1 = details.find((d) => d.id === '§TEST.1');
+    expect(section1).toBeDefined();
+    expect(section1!.refs).not.toContain('§TEST.3');
+  });
+
+  test('results are sorted by id', () => {
+    const index = buildSectionIndex(config);
+    const details = buildSectionDetails(index);
+
+    const ids = details.map((d) => d.id);
+    const sortedIds = [...ids].sort();
+    expect(ids).toEqual(sortedIds);
   });
 });

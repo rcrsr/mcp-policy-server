@@ -5,8 +5,15 @@
 
 import * as fs from 'fs';
 import { ServerConfig } from './config.js';
-import { SectionNotation, SectionIndex, IndexState } from './types.js';
-import { detectCodeBlockRanges } from './parser.js';
+import { SectionNotation, SectionIndex, IndexState, SectionDetail } from './types.js';
+import { detectCodeBlockRanges, extractSection, findEmbeddedReferences } from './parser.js';
+
+/**
+ * Pattern for splitting a section id into prefix and section number
+ * Matches the convention used elsewhere (cli.ts, index.ts) for parsing
+ * fully-qualified section ids like §APP.4.1 into ('APP', '4.1')
+ */
+const SECTION_ID_SPLIT_PATTERN = /^§([A-Z][A-Z0-9-]*)\.(.+)$/;
 
 /**
  * Debounce state for file change handling
@@ -475,4 +482,52 @@ export function ensureFreshIndex(state: IndexState, config: ServerConfig): Secti
     }
   }
   return state.index;
+}
+
+/**
+ * Build per-section detail records for list-sections output
+ *
+ * Iterates the canonical (non-duplicate) sections in index.sectionMap,
+ * extracts each section's content, and computes its outbound § references
+ * using the same fence/inline-code exclusion findEmbeddedReferences applies.
+ *
+ * @param index - Section index to build details from
+ * @returns Array of section detail records sorted by section id
+ *
+ * @example
+ * ```typescript
+ * const index = buildSectionIndex(config);
+ * const details = buildSectionDetails(index);
+ * // Returns: [{ id: '§APP.1', prefix: 'APP', file: '/path/policy-app.md',
+ * //             byteLength: 123, refs: ['§META.2'] }, ...]
+ * ```
+ */
+export function buildSectionDetails(index: SectionIndex): SectionDetail[] {
+  const details: SectionDetail[] = [];
+
+  for (const [id, filePath] of index.sectionMap.entries()) {
+    const match = SECTION_ID_SPLIT_PATTERN.exec(id);
+    if (!match) {
+      console.error(`[ERROR] Section id ${id} does not match expected §PREFIX.NUMBER format`);
+      console.error(`  Skipping this section in list-sections output`);
+      continue;
+    }
+
+    const [, prefix, sectionNum] = match;
+
+    try {
+      const content = extractSection(filePath, prefix, sectionNum);
+      const byteLength = Buffer.byteLength(content, 'utf8');
+      const refs = Array.from(new Set(findEmbeddedReferences(content))).sort();
+
+      details.push({ id, prefix, file: filePath, byteLength, refs });
+    } catch (error) {
+      console.error(
+        `[ERROR] Failed to extract section ${id} from ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      console.error(`  Skipping this section in list-sections output`);
+    }
+  }
+
+  return details.sort((a, b) => a.id.localeCompare(b.id));
 }

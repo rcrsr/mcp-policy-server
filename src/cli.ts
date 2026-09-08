@@ -7,6 +7,7 @@
  *   validate-references Validate § references exist and are unique
  *   extract-references  Extract § references from a file
  *   list-sources        List available policy files and prefixes
+ *   list-sections       List per-section detail (id, prefix, file, byteLength, refs)
  *   resolve-references  Map § references to source files
  *
  * Usage:
@@ -17,7 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, ServerConfig } from './config.js';
 import { expandSectionsWithIndex } from './handlers.js';
-import { buildSectionIndex } from './indexer.js';
+import { buildSectionIndex, buildSectionDetails } from './indexer.js';
 import { findEmbeddedReferences, expandRange } from './parser.js';
 import { fetchSectionsWithIndex, resolveSectionLocationsWithIndex } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
@@ -29,6 +30,7 @@ type Subcommand =
   | 'validate-references'
   | 'extract-references'
   | 'list-sources'
+  | 'list-sections'
   | 'resolve-references'
   | 'check';
 
@@ -43,6 +45,7 @@ const SUBCOMMANDS: Subcommand[] = [
   'validate-references',
   'extract-references',
   'list-sources',
+  'list-sections',
   'resolve-references',
   'check',
 ];
@@ -109,6 +112,7 @@ Subcommands:
   validate-references Validate that § references exist and are unique
   extract-references  Extract § references from a file
   list-sources        List available policy files and section prefixes
+  list-sections       List per-section detail (id, prefix, file, byteLength, refs) as JSON
   resolve-references  Map § references to their source files
   check               Validate policy file format (sections, numbering, fencing)
 
@@ -122,6 +126,7 @@ Examples:
   policy-cli validate-references §DOC.1 §DOC.2
   policy-cli extract-references agent.md
   policy-cli list-sources
+  policy-cli list-sections
   policy-cli resolve-references §DOC.1 §DOC.2
 `);
 }
@@ -187,6 +192,21 @@ Options:
 
 Example:
   policy-cli list-sources --config "./policies/*.md"
+`,
+    'list-sections': `
+Usage: policy-cli list-sections [options]
+
+List per-section detail (id, prefix, file, byteLength, refs) as JSON.
+
+Each record's refs field is that section's outbound § references, computed
+with the same fence/inline-code exclusion extract-references applies.
+
+Options:
+  -c, --config <path>  Path to policies.json or glob pattern
+  -h, --help           Show this help
+
+Example:
+  policy-cli list-sections --config "./policies/*.md"
 `,
     'resolve-references': `
 Usage: policy-cli resolve-references <ref>... [options]
@@ -390,6 +410,15 @@ ${Array.from(
 }
 
 /**
+ * Handle list-sections subcommand
+ */
+function handleListSections(configPath?: string): void {
+  const { index } = loadConfigAndIndex(configPath);
+  const details = buildSectionDetails(index);
+  console.log(JSON.stringify(details, null, 2));
+}
+
+/**
  * Handle resolve-references subcommand
  */
 function handleResolveReferences(args: string[], configPath?: string): void {
@@ -454,6 +483,9 @@ function main(): void {
         break;
       case 'list-sources':
         handleListSources(configPath);
+        break;
+      case 'list-sections':
+        handleListSections(configPath);
         break;
       case 'resolve-references':
         handleResolveReferences(args, configPath);
