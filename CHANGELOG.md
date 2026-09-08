@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **llms.txt:** Root-level [llms.txt](https://llmstxt.org/) giving LLM agents a condensed guide to § notation, the MCP tools, the CLI subcommands, and the hook. ([#12](https://github.com/rcrsr/mcp-policy-server/pull/12))
 - **GitHub repository setup:** Added GitHub Actions CI workflows, automated releases, nightly SDK checks, issue taxonomy, and security scanning. ([#10](https://github.com/rcrsr/mcp-policy-server/pull/10))
 - **Test coverage:** New suites for configuration loading, shared operations, the CLI runner, the hook pipeline, the MCP server over an in-memory transport, and built-binary smoke tests. Line coverage rose from 55% to 97% (branch coverage 89%). ([#9](https://github.com/rcrsr/mcp-policy-server/pull/9))
 - **list-sections subcommand:** New `policy-cli` subcommand exposing per-section index as JSON. ([#8](https://github.com/rcrsr/mcp-policy-server/pull/8))
 
 ### Changed
 
+- **Documentation accuracy:** Corrected the Node.js requirement (22.12+), the hook's allow/deny response shapes, subsection stopping rules (`{§END}` does not end a subsection), the CLI subcommand list (`list-sections`, `check`), full-form subsection ranges, config path resolution, and the scope of file watching (MCP server only). Fixed the broken CI validation loop in Best Practices and replaced stale JSON-array agent examples. ([#12](https://github.com/rcrsr/mcp-policy-server/pull/12))
 - **Package scripts:** Renamed to the `check:*` / `fix:*` convention (`check:types`, `check:lint`, `check:format`, `check:deps`, `fix:lint`, `fix:format`) with a single `npm run check` gate. Added `test:watch`, `build:watch`, and `pretest` build so binary smoke tests always run against fresh output. `knip` now guards unused exports and dependencies. Lefthook runs format, lint, and typecheck on staged files at pre-commit and the full gate at pre-push. ([#9](https://github.com/rcrsr/mcp-policy-server/pull/9))
 - **Code organization:** Extracted shared logic (reference expansion, extraction, validation, source listing) into `operations.ts`; split the CLI and hook binaries into thin entry points plus testable `cli-runner.ts` and `hook-runner.ts`; moved MCP tool definitions and dispatch into `server.ts`. `list_sources` output now also lists available prefixes, and the CLI's `list-sources` subcommand gains a matching `## Format` section. Removed dead code (`getBasePrefix`, unused error classes, duplicated extraction helpers in the indexer). ([#9](https://github.com/rcrsr/mcp-policy-server/pull/9))
 - **Dependency and toolchain upgrade:** Bumped all dependencies to latest majors, replaced ESLint/Prettier with oxlint/oxfmt, and resolved all npm audit findings. ([#7](https://github.com/rcrsr/mcp-policy-server/pull/7))

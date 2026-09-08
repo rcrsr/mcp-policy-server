@@ -4,7 +4,9 @@ Patterns and strategies for using the MCP Policy Server effectively.
 
 ## Choosing an Integration Method
 
-### Hook Method (Recommended for Claude Code)
+### Plugin and Hook Methods (Recommended for Claude Code)
+
+The Plugin method installs the hook for you with `.claude/policies/*.md` as the policy path. The Hook method is the same mechanism with a hand-written `.claude/settings.json` entry for custom paths. Everything below applies to both.
 
 **Use when:**
 - Building Claude Code subagents with known policy requirements
@@ -57,13 +59,21 @@ tools: mcp__policy-server__fetch_policies, Read
 
 **Example:**
 ```bash
-# Validate all agent files reference existing policies
+# Lint every policy file
+for policy in ./policies/*.md; do
+  npx -p @rcrsr/mcp-policy-server policy-cli check "$policy" || exit 1
+done
+
+# Validate that every agent file references existing policies
 for agent in .claude/agents/*.md; do
-  refs=$(npx -p @rcrsr/mcp-policy-server policy-cli extract-references "$agent")
+  refs=$(npx -p @rcrsr/mcp-policy-server policy-cli extract-references "$agent" | jq -r '.[]')
+  [ -z "$refs" ] && continue
   npx -p @rcrsr/mcp-policy-server policy-cli validate-references $refs \
     --config "./policies/*.md" || echo "Failed: $agent"
 done
 ```
+
+`extract-references` prints a JSON array, so pipe it through `jq -r '.[]'` before passing the references as arguments. `validate-references` requires at least one reference, hence the empty check.
 
 ### Combining Methods
 
@@ -97,7 +107,7 @@ policies/
 ### Naming Conventions
 
 **Prefixes:**
-- Uppercase alphabetic (CODE, API, SEC)
+- Uppercase letters, digits allowed after the first character (CODE, API, SEC, CODE2)
 - 2-6 characters for readability
 - Hyphenated for specialization (CODE-JS, CODE-PY)
 
@@ -116,15 +126,12 @@ policies/
 Use hierarchical organization:
 
 ```markdown
-## {§API.3}
-### Authentication
+## {§API.3} Authentication
 
-### {§API.3.1}
-#### Token Validation
+### {§API.3.1} Token Validation
 ...
 
-### {§API.3.2}
-#### Session Management
+### {§API.3.2} Session Management
 ...
 ```
 
@@ -132,7 +139,7 @@ Use hierarchical organization:
 - Fetch parent (§API.3) gets all content
 - Fetch child (§API.3.1) gets granular content
 
-**Avoid over-nesting:** Maximum 2 levels (§PREFIX.N.N)
+**Avoid over-nesting:** Two levels (§PREFIX.N.N) keep references readable. Deeper levels are supported, but range notation only expands whole sections and first-level subsections, and `policy-cli check` does not verify numbering below the first subsection level.
 
 ## Version Control
 
@@ -150,14 +157,15 @@ git commit -m "Update api-designer subagent to use §API.4"
 Deprecate first, remove later:
 
 ```markdown
-## {§CODE.5}
-### Logging Standards (DEPRECATED)
+## {§CODE.5} Logging Standards (DEPRECATED)
 **Moved to §OBS.2**
 
 See §OBS.2 for current requirements.
 ```
 
-Don't renumber sections - breaks subagent references. Use gaps or subsections instead.
+Because the stub references §OBS.2, any agent that still fetches §CODE.5 receives the current content automatically.
+
+Don't renumber sections - breaks subagent references. Leaving a gap works at runtime but `policy-cli check` reports it as `NUMBERING_GAP`, so keep a deprecated stub in place rather than deleting the section.
 
 ## Performance
 
@@ -179,8 +187,7 @@ fetch_policies(["§CODE.2"])
 Design policies to leverage recursive resolution:
 
 ```markdown
-## {§CODE.2}
-### Error Handling
+## {§CODE.2} Error Handling
 See §CODE.5 for logging and §SEC.3 for security.
 ```
 
@@ -225,8 +232,7 @@ Cite specific sections in feedback.
 Create bundles that reference related policies:
 
 ```markdown
-## {§BACKEND.1}
-### Backend Standards
+## {§BACKEND.1} Backend Standards
 
 Follow:
 - §CODE.1-5 (coding standards)
@@ -243,17 +249,16 @@ Use hyphenated prefixes:
 
 ```markdown
 # policy-coding.md
-## {§CODE.1}
-General principles
+## {§CODE.1} General principles
 
 # policy-coding-python.md
-## {§CODE-PY.1}
-Python type hints
+## {§CODE-PY.1} Python type hints
 
 # policy-coding-javascript.md
-## {§CODE-JS.1}
-JavaScript modules
+## {§CODE-JS.1} JavaScript modules
 ```
+
+Keep one base prefix per file. `policy-cli check` warns with `MIXED_PREFIX` when a file mixes unrelated prefixes; `CODE` and `CODE-PY` in one file are fine.
 
 Configure: `"files": ["./policies/policy-coding*.md"]`
 
@@ -309,7 +314,7 @@ Team workflow:
 1. Update policies via PR to company-policies repo
 2. Review and merge
 3. Pull submodule updates in project repos
-4. All projects' subagents auto-use updates (no restart needed for policy content changes)
+4. All projects' subagents auto-use updates (the hook reads files on every run; a running MCP server picks up edits to existing files without restart)
 
 ### Monitoring
 
@@ -317,6 +322,11 @@ The MCP Policy Server logs to stderr with basic startup, file watching, and inde
 - `[STARTUP]` - Server initialization
 - `[WATCH]` - File change detection
 - `[INDEX]` - Section index rebuilds
+- `[WARN]` - Duplicate section IDs found during indexing
+- `[ERROR]` - Files that could not be read or parsed
+- `[DEBUG]` - Chunking decisions for large `fetch_policies` responses
+
+The hook is silent unless run with `--debug <file>`, which appends a full trace of each invocation.
 
 For tool usage analytics (frequently fetched sections, failed lookups), you would need to:
 1. Enable logging in your MCP client (Claude Code)

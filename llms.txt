@@ -1,0 +1,75 @@
+# MCP Policy Server
+
+> Token-efficient access to team policy documents for AI agents. Policies live in markdown files with `## {§PREFIX.N}` section markers. Agents reference sections with § notation (`§CODE.1`, `§API.2.3-5`, `§SEC`) and receive only those sections, plus any sections they reference, instead of whole documents. Ships as one npm package, `@rcrsr/mcp-policy-server`, with three entry points: an MCP server, a Claude Code PreToolUse hook, and a CLI.
+
+How to operate the tool, in order of preference:
+
+1. If you are a Claude Code subagent and the policies plugin or `policy-hook` is configured, do nothing. Write § references anywhere in your agent file. The hook fetches them and appends the content to your prompt inside `<policies>` tags before you run. References inside code fences or inline backticks are ignored.
+2. If the `policy-server` MCP server is connected, call `fetch_policies` with `{"sections": ["§PREFIX.1", "§PREFIX.2.3-5"]}`. Call `list_sources` first when you do not know which prefixes exist. Call `validate_references` before relying on references you wrote yourself.
+3. From a shell or CI, run `npx -p @rcrsr/mcp-policy-server policy-cli <subcommand> --config "./policies/*.md"`.
+
+§ notation rules:
+
+- Format is `§PREFIX.N[.N...]`. PREFIX is uppercase, starts with a letter, may contain digits and hyphen-separated segments (`CODE`, `CODE2`, `CODE-PY`). Numbers are numeric only.
+- `§PREFIX.1` is a whole section. `§PREFIX.1.2` is a subsection. Nesting depth is unlimited.
+- `§PREFIX.2-4` expands to sections 2, 3, and 4. `§PREFIX.1.2-4` and `§PREFIX.1.2-1.4` both expand to subsections 1.2, 1.3, and 1.4. Ranges never cross depth or parent.
+- `§PREFIX` alone expands to every section with that prefix.
+- Fetching a section also fetches every section its text references, recursively. Fetching `§PREFIX.1` includes `§PREFIX.1.1` and `§PREFIX.1.2`, so do not request both parent and child.
+- Output is sorted by prefix, then section number. Requests are order-independent.
+- `§END` is a marker, not a section. Never request it.
+
+MCP tools (server name `policy-server`, Claude Code tool names `mcp__policy-server__<tool>`):
+
+- `fetch_policies` `{sections: string[], continuation?: string}`. Returns section content. Responses above roughly 10000 tokens are split at section boundaries. When the response ends with a continuation notice, call again with the same `sections` and the given `continuation` value (`"chunk:1"`, `"chunk:2"`, ...) until no notice appears.
+- `resolve_references` `{sections: string[]}`. Returns `{ "<file>": ["§X.1", ...] }` after recursive resolution. No content. Use it to see which files a request touches.
+- `extract_references` `{file_path: string}`. Absolute path. Returns the unique, sorted, range-expanded § references found in the file, excluding code fences and inline code.
+- `validate_references` `{references: string[]}`. Returns `{valid, checked, invalid, details}`. `invalid` lists references that are missing or defined in more than one file.
+- `list_sources` `{}`. Returns the configured files, index statistics, and available prefixes.
+- Prompt `auto-fetch`: instructs a client to call `fetch_policies` whenever it encounters § references.
+
+CLI subcommands (`policy-cli`):
+
+- `fetch-policies <file>`: extract § references from a file and print the resolved policy content.
+- `validate-references <ref>...`: print a JSON validation result. Exit code 1 when any reference is invalid.
+- `extract-references <file>`: print the § references in a file as a JSON array. Needs no `--config`.
+- `list-sources`: print configured files, statistics, and prefixes.
+- `list-sections`: print every indexed section as JSON with `id`, `prefix`, `file`, `byteLength`, and outbound `refs`.
+- `resolve-references <ref>...`: print the file-to-sections map as JSON.
+- `check <file>`: lint one policy file. Reports `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP` (errors) and `MIXED_PREFIX` (warning). Exit code 1 on errors. Needs no `--config`.
+- `-c, --config <value>` accepts a glob (`./policies/*.md`), a path to a `policies.json` manifest (`{"files": [...]}`), or inline JSON. Falls back to `MCP_POLICY_CONFIG`, then `./policies.json`. Globs and inline JSON resolve relative to the working directory. Paths inside a manifest resolve relative to the manifest's directory.
+
+Hook (`policy-hook`, Claude Code `PreToolUse` on matcher `Task`):
+
+- Reads the tool call JSON on stdin. Looks up `tool_input.subagent_type` as `<name>.md` in the agents directories, scans that file for § references, fetches them, and returns `hookSpecificOutput.updatedInput.prompt` with the policies appended.
+- Returns `{"permissionDecision": "allow"}` unchanged when the agent file is missing, has no references, or declares `mcp__policy-server__fetch_policies` in its `tools` frontmatter.
+- Returns `permissionDecision: "deny"` with a reason when a referenced section does not exist or is duplicated. Fix the reference or the policy file.
+- Options: `-c, --config`, `-a, --agents-dir` (repeatable, searched in order), `-d, --debug <file>`. With no options it auto-discovers `$CLAUDE_PROJECT_DIR/.claude/agents`, `$CLAUDE_PROJECT_DIR/.claude/policies/*.md`, `$CLAUDE_PLUGIN_ROOT/agents`, and `$CLAUDE_PLUGIN_ROOT/policies/*.md`.
+
+Writing a policy file:
+
+- Whole sections use exactly `## {§PREFIX.N} Title`. Subsections use `### {§PREFIX.N.M} Title`. A whole section runs until the next `## {§PREFIX.` heading with the same prefix, a `{§END}` line, or end of file. A subsection runs until the next `##` or `###` heading that starts with `{§`, or end of file.
+- Every section ID must be unique across all configured files. Duplicates are excluded from the index and fail validation.
+- Number sections sequentially from 1. Run `policy-cli check <file>` after editing.
+- Cross-reference with plain § text in the body. Put example references inside code fences so they are not followed.
+
+## Documentation
+
+- [README](https://github.com/rcrsr/mcp-policy-server/blob/main/README.md): Overview, the four integration methods, and quick start
+- [Getting Started](https://github.com/rcrsr/mcp-policy-server/blob/main/docs/GETTING_STARTED.md): Step-by-step setup for Plugin, Hook, MCP Server, and CLI
+- [Policy Reference](https://github.com/rcrsr/mcp-policy-server/blob/main/docs/POLICY_REFERENCE.md): Complete § notation syntax, ranges, resolution, and stopping rules
+- [Configuration Reference](https://github.com/rcrsr/mcp-policy-server/blob/main/docs/CONFIGURATION_REFERENCE.md): `MCP_POLICY_CONFIG` formats, hook options, CLI options, glob patterns
+- [Installation Guide](https://github.com/rcrsr/mcp-policy-server/blob/main/docs/INSTALLATION.md): Install commands per method, Windows notes, development setup
+- [Best Practices](https://github.com/rcrsr/mcp-policy-server/blob/main/docs/BEST_PRACTICES.md): Policy organization, naming, versioning, CI patterns
+
+## Source
+
+- [server.ts](https://github.com/rcrsr/mcp-policy-server/blob/main/src/server.ts): MCP tool and prompt definitions, exact input schemas
+- [cli-runner.ts](https://github.com/rcrsr/mcp-policy-server/blob/main/src/cli-runner.ts): CLI subcommands, usage text, exit codes
+- [hook-runner.ts](https://github.com/rcrsr/mcp-policy-server/blob/main/src/hook-runner.ts): Hook pipeline, discovery order, allow and deny responses
+- [parser.ts](https://github.com/rcrsr/mcp-policy-server/blob/main/src/parser.ts): § notation regexes, range expansion, section extraction
+
+## Optional
+
+- [CHANGELOG](https://github.com/rcrsr/mcp-policy-server/blob/main/CHANGELOG.md): Version history
+- [Sample policies](https://github.com/rcrsr/mcp-policy-server/tree/main/tests/fixtures/sample-policies): Example policy files used by the test suite
+- [npm package](https://www.npmjs.com/package/@rcrsr/mcp-policy-server): Published releases

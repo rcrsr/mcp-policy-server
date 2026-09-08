@@ -131,8 +131,9 @@ Add to your project's `.claude/settings.json`:
 ```
 
 **Configuration options:**
-- `-c, --config` - Glob pattern for policy files (defaults to `MCP_POLICY_CONFIG` env var or `./policies.json`)
-- `-a, --agents-dir` - Agent files directory (defaults to `$CLAUDE_PROJECT_DIR/.claude/agents`)
+- `-c, --config` - Glob pattern, `policies.json` path, or inline JSON. Defaults to `MCP_POLICY_CONFIG`, then auto-discovers `$CLAUDE_PROJECT_DIR/.claude/policies/*.md` and `$CLAUDE_PLUGIN_ROOT/policies/*.md`
+- `-a, --agents-dir` - Agent files directory, repeatable. Defaults to `$CLAUDE_PROJECT_DIR/.claude/agents` and `$CLAUDE_PLUGIN_ROOT/agents`
+- `-d, --debug <file>` - Append a trace of each hook run to `<file>` for troubleshooting
 
 ### Step 3: Create a Subagent with Policy References
 
@@ -190,7 +191,7 @@ echo '{"tool_name":"Task","tool_input":{"prompt":"test","subagent_type":"policy-
   npx -p @rcrsr/mcp-policy-server policy-hook --config "./policies/*.md"
 ```
 
-You should see JSON output with policies in `hookSpecificOutput.updatedInput.prompt`.
+You should see JSON output with policies in `hookSpecificOutput.updatedInput.prompt`. If the output is only `{"permissionDecision":"allow"}`, the hook found no agent file or no § references. Add `--debug hook.log` to the command and read the log to see which paths it checked.
 
 ---
 
@@ -309,6 +310,14 @@ npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies document.md --config "
 
 Extracts § references from `document.md`, fetches matching policies, outputs to stdout.
 
+### Lint a Policy File
+
+```bash
+npx -p @rcrsr/mcp-policy-server policy-cli check ./policies/policy-example.md
+```
+
+Reports malformed headers, wrong heading levels, unclosed code fences, orphan subsections, and numbering gaps. Exit code 1 on errors. See the [Configuration Reference](CONFIGURATION_REFERENCE.md#cli-configuration) for all seven subcommands.
+
 ### Use in Scripts
 
 ```bash
@@ -321,6 +330,11 @@ echo "Follow these policies:\n$POLICIES\n\nNow complete the task..." | your-llm-
 
 ```yaml
 # GitHub Actions example
+- name: Lint policy files
+  run: |
+    for f in ./policies/*.md; do
+      npx -p @rcrsr/mcp-policy-server policy-cli check "$f"
+    done
 - name: Validate policy references
   run: |
     npx -p @rcrsr/mcp-policy-server policy-cli validate-references §DOC.1 §DOC.2 \
@@ -331,21 +345,22 @@ echo "Follow these policies:\n$POLICIES\n\nNow complete the task..." | your-llm-
 
 ## Automatic Policy Updates
 
-Policy files are watched automatically for changes. Updates appear on the next request without restart.
+The Plugin, Hook, and CLI methods read policy files fresh on every invocation. Edits take effect on the next subagent run or command. No restart is needed.
 
-**How it works:**
-1. Files are monitored for changes
-2. When a file changes, the section index is marked stale
-3. On the next request, the index rebuilds automatically
+The MCP Server method is a long-running process. It watches the configured files and rebuilds its index lazily:
 
-**What triggers updates:**
+1. Files are monitored with `fs.watch`
+2. When a file changes, the section index is marked stale after a 300 ms debounce
+3. On the next tool call, the index rebuilds automatically
+
+**What triggers a rebuild:**
 - File content changes (save/modify)
 - File deletion
 - File rename
 
-**Limitations:**
-- New files matching existing glob patterns require restart
-- Configuration changes require restart
+**MCP Server limitations:**
+- New files matching an existing glob pattern require a server restart
+- Configuration changes require a server restart
 - Files on network drives or WSL may have delayed updates
 
 ---
@@ -369,15 +384,15 @@ Additional guidelines and standards.
 See §EXAMPLE.1 for related information.
 ```
 
-The glob pattern `./policies/*.md` automatically includes new files (restart required to detect new files).
+The glob pattern `./policies/*.md` includes new files automatically. The MCP server expands the pattern once at startup, so restart it after adding a file. The hook and CLI expand it on every run.
 
 ---
 
 ## Advanced Features
 
-- **Range notation**: `§EXAMPLE.1-3` expands to sections 1, 2, and 3
+- **Range notation**: `§EXAMPLE.1-3` expands to sections 1, 2, and 3; `§EXAMPLE.1.1-3` expands to subsections 1.1, 1.2, and 1.3
 - **Prefix-only notation**: `§EXAMPLE` expands to all `§EXAMPLE.*` sections
-- **Subsections**: `§EXAMPLE.1.1` for nested content organization
+- **Subsections**: `### {§EXAMPLE.1.1}` for nested content organization
 - **Hyphenated prefixes**: `§PREFIX-EXT.1` for category extensions
 - **Automatic reference resolution**: Fetching a section also fetches any sections it references
 
@@ -394,8 +409,11 @@ See [Policy Reference](POLICY_REFERENCE.md) for complete § notation syntax.
 
 ### Hook Issues
 - **Policies not injected**: Verify `.claude/settings.json` syntax and hook configuration
-- **Wrong policies**: Check the JSON array in your agent file matches available sections
+- **Agent file not found**: The hook looks for `<subagent_type>.md` in the agents directories; check the file name matches the agent's `name`
+- **Wrong or missing policies**: Run `policy-cli extract-references .claude/agents/<agent>.md` to see what the hook extracts
+- **Tool call denied**: The hook denies the call when a referenced section does not exist or is duplicated. Run `policy-cli validate-references` on the reported reference
 - **Hook not triggering**: Ensure matcher is "Task" (case-sensitive)
+- **Anything else**: Add `--debug hook.log` to the hook command and read the trace
 
 ### MCP Server Issues
 - **Server won't start**: Check `MCP_POLICY_CONFIG` points to valid file/pattern
@@ -403,12 +421,13 @@ See [Policy Reference](POLICY_REFERENCE.md) for complete § notation syntax.
 - **Connection failed**: Run `/mcp` to check status, restart Claude Code
 
 ### Section Issues
-- **Section not found**: Check format is `## {§PREFIX.1}` with curly braces
+- **Section not found**: Check format is `## {§PREFIX.1}` with curly braces and one space after `##`
 - **Duplicates warning**: Same section ID in multiple files—remove from one
+- **Format errors**: Run `policy-cli check <file>` for line-numbered diagnostics
 
 ### General
 - **Windows paths**: Use forward slashes in JSON: `./policies/*.md`
-- **Stale content**: Edit policy file to trigger reload, or restart
+- **Stale content (MCP Server)**: Edit the policy file to trigger a reload, or restart the server
 
 ---
 
