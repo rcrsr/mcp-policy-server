@@ -116,21 +116,25 @@ export function dedupeSupersededReferences(
 /**
  * Fetch policy content for a list of references
  *
- * Expands prefix-only and range notation against the index, deduplicates,
+ * Drops references superseded by a prefix-only reference in the same list,
+ * expands prefix-only and range notation against the index, deduplicates,
  * sorts, then fetches with recursive § resolution.
  *
  * @param references - Section notations (any supported form)
  * @param index - Section index
  * @param baseDir - Base directory for relative file names
+ * @param onSuperseded - Optional callback invoked for each dropped reference
  * @returns Combined section content
  * @throws {Error} When a reference cannot be resolved
  */
 export function fetchPoliciesForReferences(
   references: string[],
   index: SectionIndex,
-  baseDir: string
+  baseDir: string,
+  onSuperseded?: (reference: string, prefix: string) => void
 ): string {
-  const expanded = expandSectionsWithIndex(references, index);
+  const deduped = dedupeSupersededReferences(references, onSuperseded);
+  const expanded = expandSectionsWithIndex(deduped, index);
   const unique = Array.from(new Set(expanded)).sort() as SectionNotation[];
   return fetchSectionsWithIndex(unique, index, baseDir);
 }

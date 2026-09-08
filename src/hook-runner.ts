@@ -11,7 +11,7 @@ import * as path from 'path';
 import { loadConfig } from './config.js';
 import { buildSectionIndex } from './indexer.js';
 import { findEmbeddedReferences } from './parser.js';
-import { dedupeSupersededReferences, fetchPoliciesForReferences } from './operations.js';
+import { fetchPoliciesForReferences } from './operations.js';
 import { SectionIndex } from './types.js';
 
 /**
@@ -19,8 +19,8 @@ import { SectionIndex } from './types.js';
  */
 interface HookInput {
   tool_input?: {
-    subagent_type?: string;
-    prompt?: string;
+    subagent_type?: unknown;
+    prompt?: unknown;
     [key: string]: unknown;
   };
 }
@@ -288,13 +288,10 @@ export function fetchPoliciesForAgent(
     return { ok: true, content: '' };
   }
 
-  const references = dedupeSupersededReferences(rawReferences, (ref, prefix) =>
-    log(`${ref} superseded by §${prefix}`)
-  );
-  log(`${references.length} references after prefix dedup`);
-
   try {
-    const content = fetchPoliciesForReferences(references, index, baseDir);
+    const content = fetchPoliciesForReferences(rawReferences, index, baseDir, (ref, prefix) =>
+      log(`${ref} superseded by §${prefix}`)
+    );
     log(`fetched ${content.length} chars`);
     return { ok: true, content };
   } catch (e) {
@@ -349,9 +346,9 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   const subagentType = input.tool_input?.subagent_type;
   const prompt = input.tool_input?.prompt;
   log(`subagent_type: ${subagentType ?? '(not set)'}`);
-  log(`prompt length: ${prompt?.length ?? 0} chars`);
+  log(`prompt length: ${typeof prompt === 'string' ? prompt.length : 0} chars`);
 
-  if (!subagentType || !prompt) {
+  if (typeof subagentType !== 'string' || typeof prompt !== 'string' || !subagentType || !prompt) {
     log('EXIT: missing subagent_type or prompt');
     return ALLOW_RESPONSE;
   }
@@ -386,6 +383,9 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
       log('loading config...');
       const loaded = loadConfig(effectiveConfigPath);
       log(`config loaded: ${loaded.files.length} files`);
+      log(
+        `policy files: ${loaded.files.slice(0, 5).join(', ')}${loaded.files.length > 5 ? '...' : ''}`
+      );
       log('building section index...');
       const built = buildSectionIndex(loaded);
       log(`index built: ${built.sectionCount} sections`);

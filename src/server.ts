@@ -155,7 +155,7 @@ ${prefixDocs}
 
 When you see § refs:
 1. Extract notations (§APP.7, §SYS.5)
-2. Call fetch with sections array
+2. Call fetch_policies with sections array
 3. Use content for task
 
 Skip if already in context or purely informational.`,
