@@ -24,6 +24,29 @@
       "_conduct": true
     },
     {
+      "name": "codanna-settings",
+      "paths": [
+        ".codanna"
+      ],
+      "checks": {
+        ".toml": [
+          {
+            "name": "codanna-settings",
+            "command": "node",
+            "args": [
+              "conduct/resources/scripts/check-codanna-settings.mjs",
+              "--file",
+              "$FILE",
+              "--json"
+            ],
+            "parser": "jsonl",
+            "_conduct": true
+          }
+        ]
+      },
+      "_conduct": true
+    },
+    {
       "name": "tests",
       "paths": [
         "tests"
@@ -150,6 +173,27 @@
       "match": "conduct:policy-engineer",
       "action": "review",
       "message": "Invoke conduct:policy-reviewer to validate the policy file.",
+      "_conduct": true
+    },
+    {
+      "name": "mcp-code-reviewer",
+      "match": "mcp-engineer",
+      "action": "review",
+      "message": "Invoke mcp-code-reviewer to validate the implementation.",
+      "_conduct": true
+    },
+    {
+      "name": "cli-code-reviewer",
+      "match": "cli-engineer",
+      "action": "review",
+      "message": "Invoke cli-code-reviewer to validate the implementation.",
+      "_conduct": true
+    },
+    {
+      "name": "library-code-reviewer",
+      "match": "library-engineer",
+      "action": "review",
+      "message": "Invoke library-code-reviewer to validate the implementation.",
       "_conduct": true
     }
   ]
