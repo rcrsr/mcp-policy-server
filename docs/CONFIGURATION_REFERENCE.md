@@ -85,7 +85,7 @@ Configure hooks in your project's `.claude/settings.json`.
 | `--mode <digest\|full>` | No | `full` (default) injects all referenced policy text. `digest` injects a digest block, then the full text of `[IMPORTANT]` sections, then a footer |
 | `--digest-depth <n>` | No | Deepest nested section level listed in the digest (default 2, minimum 2; `§D.4` is level 1, `§D.4.1` is level 2). Nested sections tagged important are listed even when deeper |
 | `--digest-line-chars <n>` | No | Maximum characters per digest line (default 200) |
-| `--digest-budget <n>` | No | Maximum digest characters (default 8000). Above it, every line degrades to `§ID Title` and the footer says so |
+| `--digest-minimal <n>` | No | Maximum digest characters (default 8000). Above it, every line degrades to `§ID Title` and the footer says so |
 | `--fetch-instructions <text>` | No | Replaces the whole default footer statement. The over-budget notice is still appended |
 | `-h, --help` | No | Print usage and exit |
 
