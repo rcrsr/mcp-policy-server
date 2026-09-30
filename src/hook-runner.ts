@@ -17,7 +17,7 @@ import {
   isImportantSection,
   parseSectionHeading,
 } from './parser.js';
-import { resolvePolicyInventory } from './operations.js';
+import { joinInventory, resolvePolicyInventory } from './operations.js';
 import { InventorySection, SectionIndex, SectionNotation } from './types.js';
 
 /**
@@ -304,7 +304,7 @@ export function fetchPoliciesForAgent(
     const inventory = resolvePolicyInventory(rawReferences, index, baseDir, (ref, prefix) =>
       log(`${ref} superseded by §${prefix}`)
     );
-    const content = inventory.map((section) => section.content).join('\n');
+    const content = joinInventory(inventory);
     log(`fetched ${content.length} chars`);
     return { ok: true, content, inventory };
   } catch (e) {
@@ -401,6 +401,20 @@ function digestLine(entry: DigestEntry, options: DigestOptions, titleOnly: boole
   return `${entry.id}${rest}${entry.important ? FULL_TEXT_MARKER : ''}`;
 }
 
+/** True when a proper ancestor of id (below the entry itself) is important, so its block already covers id */
+function isInheritedImportant(
+  id: SectionNotation,
+  tagged: ReadonlySet<SectionNotation>,
+  entryId: SectionNotation
+): boolean {
+  let parent = id.substring(0, id.lastIndexOf('.'));
+  while (parent.includes('.') && parent !== entryId) {
+    if (isImportantSection(parent as SectionNotation, tagged)) return true;
+    parent = parent.substring(0, parent.lastIndexOf('.'));
+  }
+  return false;
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -452,14 +466,18 @@ export function buildPolicyDigest(
           important,
         });
       }
-      if (important && !entryImportant) {
+      if (important && !entryImportant && !isInheritedImportant(heading.id, tagged, section.id)) {
         const num = heading.id.slice(heading.id.indexOf('.') + 1);
-        const extracted = extractSectionFromLines(lines, section.prefix, num);
+        const headingPrefix = heading.id.slice(1, heading.id.indexOf('.'));
+        const extracted = extractSectionFromLines(lines, headingPrefix, num);
         if (extracted) {
           fullBlocks.push(extracted);
         } else {
           // Extractor only matches ## and ### headings; slice deeper headings directly
-          const next = headings.find((other) => other.lineIndex > heading.lineIndex);
+          // Stop at the first heading that is not a descendant of this one
+          const next = headings.find(
+            (other) => other.lineIndex > heading.lineIndex && !other.id.startsWith(`${heading.id}.`)
+          );
           const end = next ? next.lineIndex : lines.length;
           fullBlocks.push(lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, ''));
         }

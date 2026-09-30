@@ -17,11 +17,20 @@ const MALFORMED_SECTION_PATTERN = /^(#{2,})\s*\{§/;
 // Code fence pattern (captures backtick count and optional language)
 const CODE_FENCE_PATTERN = /^(`{3,})(\S*)/;
 
+/** True for a bracketed token whose inner text starts with `import` and is at most 12 characters */
+function isImportantNearMiss(token: string): boolean {
+  const inner = /^\[([^\]]*)\]$/.exec(token)?.[1].trim().toLowerCase();
+  return inner !== undefined && inner.startsWith('import') && inner.length <= 12;
+}
+
 /**
  * Find a malformed importance tag on a § heading line
  *
  * Covers brackets inside the braces, a bracketed token after the closing brace
- * that is not exactly ` [IMPORTANT]`, and `[IMPORTANT]` (any case) in the title.
+ * that reads as important or is a near-miss typo (inner text starts with
+ * `import`, at most 12 characters, e.g. `[IMPORTANTT]`, `[IMPORTENT]`) but is
+ * not exactly ` [IMPORTANT]`, and `[IMPORTANT]` (any case) in the title. Other
+ * bracketed titles such as `[Deprecated]` or `[link](url)` are left alone.
  *
  * @returns Error message, or null when the tags are well-formed
  */
@@ -39,10 +48,10 @@ function findMalformedTag(line: string): string | null {
   if (bracketed) {
     const exact =
       rest.startsWith(` ${IMPORTANT_TAG}`) && /^\s|^$/.test(rest.slice(1 + IMPORTANT_TAG.length));
-    if (!exact) {
+    if (!exact && isImportantNearMiss(bracketed[0].trim())) {
       return `Malformed tag "${bracketed[0].trim()}" after the closing brace. Only exactly ${IMPORTANT_TAG} (uppercase, one space after the brace) is allowed`;
     }
-    rest = rest.slice(1 + IMPORTANT_TAG.length);
+    if (exact) rest = rest.slice(1 + IMPORTANT_TAG.length);
   }
 
   if (/\[important\]/i.test(rest)) {

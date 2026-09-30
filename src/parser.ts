@@ -486,7 +486,7 @@ export function sortSections(notations: SectionNotation[]): SectionNotation[] {
  * @returns Parsed heading (lineIndex 0), or null for non-§ headings
  */
 export function parseSectionHeading(line: string): SectionHeading | null {
-  const match = SECTION_HEADING_PATTERN.exec(line);
+  const match = SECTION_HEADING_PATTERN.exec(line.replace(/\r$/, ''));
   if (!match) return null;
   return {
     id: match[2],

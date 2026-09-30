@@ -12,7 +12,7 @@ import {
   PREFIX_ONLY_PATTERN,
   sortSections,
 } from './parser.js';
-import { gatherSectionsWithIndex } from './resolver.js';
+import { gatherSectionsWithIndex, joinSectionContents } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { ServerConfig } from './config.js';
 import { InventorySection, SectionIndex, SectionNotation } from './types.js';
@@ -172,9 +172,17 @@ export function fetchPoliciesForReferences(
   baseDir: string,
   onSuperseded?: (reference: string, prefix: string) => void
 ): string {
-  return resolvePolicyInventory(references, index, baseDir, onSuperseded)
-    .map((section) => section.content)
-    .join('\n');
+  return joinInventory(resolvePolicyInventory(references, index, baseDir, onSuperseded));
+}
+
+/**
+ * Join an ordered inventory into the combined policy content
+ *
+ * @param inventory - Sections in output order
+ * @returns Combined section content
+ */
+export function joinInventory(inventory: InventorySection[]): string {
+  return joinSectionContents(inventory.map((section) => section.content));
 }
 
 /**

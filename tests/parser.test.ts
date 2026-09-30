@@ -806,6 +806,21 @@ Text after with §META.2
       });
     });
 
+    it('should detect the important tag on a CRLF line', () => {
+      const heading = parseSectionHeading(`## {§PY.7} ${IMPORTANT_TAG} Error Handling\r`);
+
+      expect(heading).toMatchObject({ id: '§PY.7', title: 'Error Handling', tagged: true });
+    });
+
+    it('should collect headings from CRLF content', () => {
+      const lines = '## {§PY.1} A\r\n### {§PY.1.1} [IMPORTANT] B\r\n'.split('\n');
+
+      expect(collectSectionHeadings(lines).map((h) => [h.id, h.title, h.tagged])).toEqual([
+        ['§PY.1', 'A', false],
+        ['§PY.1.1', 'B', true],
+      ]);
+    });
+
     it('should parse a heading with no title', () => {
       const heading = parseSectionHeading('### {§PY.7.2}');
 

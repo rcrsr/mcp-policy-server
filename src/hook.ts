@@ -45,7 +45,7 @@ Options:
                           digest injects one line per section plus the full text
                           of [IMPORTANT] sections, then how to fetch the rest
   --digest-depth <n>      Deepest nested section level listed (default 2, minimum 2)
-  --digest-line-chars <n> Maximum characters per digest line (default 200)
+  --digest-line-chars <n> Maximum characters per digest line, excluding the full-text marker (default 200)
   --digest-minimal        Digest lines show only the section id and title
   --fetch-instructions <text>
                           Replaces the default digest footer statement

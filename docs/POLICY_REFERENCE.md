@@ -66,7 +66,7 @@ Mark a section as important by adding exactly `[IMPORTANT]` after the closing br
 - The tag is uppercase and optional, and the title after it is optional.
 - A tagged section makes every nested subsection important (`§PREFIX.1.1`, `§PREFIX.1.1.1`, ...). A tag on a subsection affects only that subsection and its descendants, not its parent or siblings.
 - The tag does not change section extraction or stopping rules.
-- Any other bracketed token directly after `}` (`[important]`, `[IMPORTANT ]`) is a `MALFORMED_TAG` error in `policy-cli check`, as is `[` inside the braces and `[IMPORTANT]` (any case) later in the title. The tag must come directly after the brace, followed by a space.
+- Any other bracketed token directly after `}` that reads as important or is a near-miss typo (inner text starts with `import`, at most 12 characters: `[important]`, `[IMPORTANT ]`, `[IMPORTANTT]`, `[IMPORTENT]`) is a `MALFORMED_TAG` error in `policy-cli check`, as is `[` inside the braces and `[IMPORTANT]` (any case) later in the title. The tag must come directly after the brace, followed by a space.
 - `policy-cli list-sections` reports `important` for each section. In hook `--mode digest`, important sections are injected in full and all others as one-line digests.
 
 ## Range Notation

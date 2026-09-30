@@ -672,6 +672,44 @@ Third body.
     return text.split('\n\n')[0].split('\n');
   }
 
+  it('emits a tagged nested section with deeper children once in the full block', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'policy-d.md'),
+      [
+        '## {§D.1} Plain',
+        'Plain intro.',
+        '',
+        '### {§D.1.1} [IMPORTANT] Tagged',
+        'Tagged body.',
+        '',
+        '#### {§D.1.1.1} Grandchild',
+        'Grandchild body.',
+        '{§END}',
+        '',
+      ].join('\n')
+    );
+
+    const { digest } = digestFor(['§D.1']);
+
+    const fullBlock = digest.text.split('\n\n').slice(1).join('\n\n');
+    expect(fullBlock.split('Grandchild body.')).toHaveLength(2);
+    expect(digest.full).toBe(1);
+    expect(digestLines(digest.text).map((line) => line.split(/[ :]/)[0])).toEqual([
+      '§D.1',
+      '§D.1.1',
+      '§D.1.1.1',
+    ]);
+  });
+
+  it('detects important sections in CRLF policy files', () => {
+    fs.writeFileSync(path.join(tmpDir, 'policy-d.md'), DIGEST_POLICY.replace(/\n/g, '\r\n'));
+
+    const { digest } = digestFor(['§D.1']);
+
+    expect(digestLines(digest.text)[0]).toContain('(full text below)');
+    expect(digest.full).toBe(1);
+  });
+
   it('lists every inventory id including a transitively referenced section', () => {
     const { inventory, digest } = digestFor(['§D.2']);
     const lineIds = digestLines(digest.text).map((line) => line.split(/[ :]/)[0]);
@@ -857,6 +895,38 @@ Third body.
     expect(digest.full).toBe(1);
     expect(digest.text).toContain('#### {§H.1.1} [IMPORTANT] Deep\nDeep body.');
     expect(digest.text).toContain('§H.1.1 Deep: Deep body. (full text below)');
+  });
+
+  it('keeps the body of a deeper child inside a tagged #### heading exactly once', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'policy-h.md'),
+      [
+        '## {§H.1} Top',
+        'Top body.',
+        '',
+        '#### {§H.1.1.1} [IMPORTANT] Deep',
+        'Deep body.',
+        '',
+        '##### {§H.1.1.1.1} Deeper',
+        'Deeper body.',
+        '',
+        '{§END}',
+        '',
+      ].join('\n')
+    );
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-h.md')],
+      baseDir: tmpDir,
+    });
+    const inventory = resolvePolicyInventory(['§H.1'], index, tmpDir);
+    const digest = buildPolicyDigest(
+      inventory,
+      new Set(['§H.1.1.1' as SectionNotation]),
+      DEFAULT_DIGEST_OPTIONS
+    );
+
+    expect(digest.text.split('##### {§H.1.1.1.1} Deeper\nDeeper body.')).toHaveLength(2);
+    expect(digest.text.split('#### {§H.1.1.1} [IMPORTANT] Deep\nDeep body.')).toHaveLength(2);
   });
 
   it('follows the line-format and first-sentence rules', () => {

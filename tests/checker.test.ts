@@ -27,7 +27,13 @@ describe('checker', () => {
     });
 
     it('should report MALFORMED_TAG for a bracketed token after the brace that is not exactly [IMPORTANT]', () => {
-      for (const tag of ['[IMPORTANT ]', '[ IMPORTANT ]', '[important]', '[IMPORTANTT]']) {
+      for (const tag of [
+        '[IMPORTANT ]',
+        '[ IMPORTANT ]',
+        '[important]',
+        '[IMPORTANTT]',
+        '[IMPORTENT]',
+      ]) {
         const result = checkPolicyContent(`## {§PY.1} ${tag} Title\n`);
         expect(result.valid).toBe(false);
         expect(result.issues).toHaveLength(1);
@@ -35,6 +41,14 @@ describe('checker', () => {
           severity: 'error',
           code: 'MALFORMED_TAG',
         });
+      }
+    });
+
+    it('should accept a bracketed title that does not read as important', () => {
+      for (const title of ['[Deprecated] Title', '[link](url) Title']) {
+        const result = checkPolicyContent(`## {§PY.1} ${title}\n`);
+        expect(result.issues.filter((issue) => issue.code === 'MALFORMED_TAG')).toEqual([]);
+        expect(result.valid).toBe(true);
       }
     });
 
