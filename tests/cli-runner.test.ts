@@ -14,7 +14,9 @@ const toGlob = (p: string): string => p.split(path.sep).join('/');
 
 /** Inline JSON config selecting a fixed set of fixture files */
 function inlineConfig(names: string[]): string {
-  return JSON.stringify({ files: names.map((n) => toGlob(path.join(FIXTURES_DIR, n))) });
+  return JSON.stringify({
+    files: names.map((n) => toGlob(path.join(FIXTURES_DIR, n))),
+  });
 }
 
 /** Copy fixture files into a directory and write a policies.json manifest there */
@@ -35,7 +37,10 @@ vi.mock('../src/indexer.js', async (importOriginal) => {
     buildSectionDetails: (...args: Parameters<typeof actual.buildSectionDetails>) => {
       const result = actual.buildSectionDetails(...args);
       if (mocks.skipSection) {
-        result.skipped.push({ id: '§X.1', reason: 'Failed to read (simulated)' });
+        result.skipped.push({
+          id: '§X.1',
+          reason: 'Failed to read (simulated)',
+        });
       }
       return result;
     },
@@ -70,7 +75,10 @@ describe('cli-runner', () => {
     it('requests usage with exit 0 for --help and -h', () => {
       expect(parseArgs(['--help'])).toEqual({ kind: 'help', exitCode: 0 });
       expect(parseArgs(['-h'])).toEqual({ kind: 'help', exitCode: 0 });
-      expect(parseArgs(['bogus', '--help'])).toEqual({ kind: 'help', exitCode: 0 });
+      expect(parseArgs(['bogus', '--help'])).toEqual({
+        kind: 'help',
+        exitCode: 0,
+      });
     });
 
     it('rejects unknown subcommands and lists the valid ones', () => {
@@ -123,7 +131,11 @@ describe('cli-runner', () => {
   describe('runCli help and errors', () => {
     it('prints general usage to stderr', () => {
       expect(runCli([])).toEqual({ exitCode: 1, stdout: '', stderr: USAGE });
-      expect(runCli(['--help'])).toEqual({ exitCode: 0, stdout: '', stderr: USAGE });
+      expect(runCli(['--help'])).toEqual({
+        exitCode: 0,
+        stdout: '',
+        stderr: USAGE,
+      });
     });
 
     it('prints subcommand usage to stderr', () => {
@@ -153,8 +165,86 @@ describe('cli-runner', () => {
     it('requires a file argument', () => {
       const result = runCli(['fetch-policies']);
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('fetch-policies requires a file argument');
+      expect(result.stderr).toContain('fetch-policies requires a file argument or § references');
       expect(result.stderr).toContain('Usage: policy-cli fetch-policies');
+    });
+
+    it('treats only --config as no arguments', () => {
+      const result = runCli(['fetch-policies', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('Usage: policy-cli fetch-policies');
+    });
+
+    it('fetches sections for § reference arguments', () => {
+      const result = runCli(['fetch-policies', '§META.1', '§APP.4.1-2', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('## {§META.1}');
+      expect(result.stdout).toContain('### {§APP.4.1}');
+      expect(result.stdout).toContain('### {§APP.4.2}');
+      expect(result.stdout).toContain('### {§APP.4.3}');
+    });
+
+    it('gives the same output for references as for a file containing them', () => {
+      const file = path.join(tmpDir, 'agent.md');
+      fs.writeFileSync(file, 'Follow §META.1 and §APP.4.1-2.');
+      const fromFile = runCli(['fetch-policies', file, '--config', CORE_CONFIG]);
+      const fromArgs = runCli(['fetch-policies', '§META.1', '§APP.4.1-2', '--config', CORE_CONFIG]);
+      expect(fromArgs.stdout).toBe(fromFile.stdout);
+    });
+
+    it('is independent of reference order', () => {
+      const a = runCli(['fetch-policies', '§META.1', '§APP.4.1-2', '--config', CORE_CONFIG]);
+      const b = runCli(['fetch-policies', '§APP.4.1-2', '§META.1', '--config', CORE_CONFIG]);
+      expect(b.stdout).toBe(a.stdout);
+    });
+
+    it('lets a prefix reference supersede a nested one', () => {
+      const result = runCli(['fetch-policies', '§META', '§META.42', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('{§META.1}');
+      expect(result.stdout).toContain('{§META.2}');
+    });
+
+    it('fails with exit 1 for an unresolved reference', () => {
+      const result = runCli(['fetch-policies', '§META.42', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/^Error: /);
+      expect(result.stderr).toContain('§META.42');
+    });
+
+    it('does not split or trim a malformed reference argument', () => {
+      const result = runCli(['fetch-policies', '§META.1,', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('§META.1,');
+    });
+
+    it('fails for an unknown prefix', () => {
+      const result = runCli(['fetch-policies', '§NOPE', '--config', CORE_CONFIG]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('No sections found for prefix: NOPE');
+    });
+
+    it('rejects mixed references and a file before loading config', () => {
+      for (const args of [
+        ['§META.1', 'agent.md'],
+        ['agent.md', '§META.1'],
+      ]) {
+        const result = runCli(['fetch-policies', ...args, '--config', 'unused.json'], tmpDir);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('not both');
+      }
+    });
+
+    it('parseArgs keeps § references as positional args with the config path', () => {
+      expect(parseArgs(['fetch-policies', '--config', '{"files":["a"]}', '§A.1', '§A.2'])).toEqual({
+        kind: 'run',
+        subcommand: 'fetch-policies',
+        args: ['§A.1', '§A.2'],
+        configPath: '{"files":["a"]}',
+      });
     });
 
     it('fails for a missing file', () => {
@@ -294,8 +384,26 @@ describe('cli-runner', () => {
         prefix: 'META',
         file: 'policy-meta.md',
         refs: [],
+        important: false,
       });
       expect(parsed.details[0].byteLength).toBeGreaterThan(0);
+    });
+
+    it('marks tagged sections and their children important', () => {
+      fs.writeFileSync(
+        path.join(tmpDir, 'policy-imp.md'),
+        '## {§IMP.1} [IMPORTANT] Tagged\nbody\n### {§IMP.1.1} Child\nchild\n## {§IMP.2} Plain\nbody\n'
+      );
+      fs.writeFileSync(path.join(tmpDir, 'policies.json'), JSON.stringify({ files: ['./*.md'] }));
+      const result = runCli(['list-sections', '--config', path.join(tmpDir, 'policies.json')]);
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.details.map((d: { important: boolean }) => d.important)).toEqual([
+        true,
+        true,
+        false,
+      ]);
     });
 
     it('reports skipped sections on stderr with exit 1', () => {
@@ -362,6 +470,14 @@ describe('cli-runner', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain('[UNCLOSED_FENCE]');
       expect(result.stdout).toContain('[NUMBERING_GAP]');
+    });
+
+    it('returns exit 1 and reports MALFORMED_TAG for a malformed important tag', () => {
+      const file = path.join(tmpDir, 'badtag.md');
+      fs.writeFileSync(file, '## {§TAG.1} [important] Title\ncontent\n');
+      const result = runCli(['check', file]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('[MALFORMED_TAG]');
     });
   });
 });

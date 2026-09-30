@@ -55,4 +55,5 @@ point belongs in `operations.ts`.
 - Parent-child deduplication: §DOC.4 supersedes §DOC.4.1
 - Response chunking at section boundaries (10000 token limit, MCP `fetch_policies` only)
 - File watching and lazy index rebuild apply to the MCP server only; hook and CLI rebuild the index per invocation
+- `[IMPORTANT]` after a heading's `}` marks a section and its nested subsections important; hook `--mode digest` lists every section as a one-line digest and injects full text only for important ones (full mode is the default)
 - `llms.txt` at the root mirrors the tool surface; update it when tools, subcommands, or notation change

@@ -7,18 +7,22 @@
  *
  * Usage:
  *   policy-hook [--config <path>] [--agents-dir <path>] [--debug <file>]
+ *               [--mode digest|full] [--digest-depth <n>] [--digest-line-chars <n>]
+ *               [--digest-minimal] [--fetch-instructions <text>]
  *
  * Note: 'policy-fetch' is supported as an alias for backwards compatibility.
  * The --hook flag is accepted but ignored (hook mode is always implied).
  */
 
 import * as fs from 'fs';
-import { runHook } from './hook-runner.js';
+import { DigestOptions, runHook } from './hook-runner.js';
 
 interface ParsedArgs {
   configPath?: string;
   agentsDirs: string[];
   debugFile?: string;
+  mode: 'full' | 'digest';
+  digest: Partial<DigestOptions>;
 }
 
 const USAGE = `
@@ -37,6 +41,15 @@ Options:
                           (defaults to $CLAUDE_PROJECT_DIR/.claude/agents and
                           $CLAUDE_PLUGIN_ROOT/agents if directories exist)
   -d, --debug <file>      Write debug output to file
+  --mode <digest|full>    full (default) injects all referenced policy text;
+                          digest injects one line per section plus the full text
+                          of [IMPORTANT] sections, then how to fetch the rest
+  --digest-depth <n>      Deepest nested section level listed (default 2, minimum 2)
+  --digest-line-chars <n> Maximum characters per digest line, excluding the full-text marker (default 200)
+  --digest-minimal        Digest lines show only the section id and title
+  --fetch-instructions <text>
+                          Replaces the default digest footer statement
+                          (digest flags are ignored in full mode)
   -h, --help              Show this help message
 
 Example hook configuration:
@@ -71,6 +84,26 @@ function parseArgs(args: string[]): ParsedArgs {
   let configPath: string | undefined;
   const agentsDirs: string[] = [];
   let debugFile: string | undefined;
+  let mode: 'full' | 'digest' = 'full';
+  const digest: Partial<DigestOptions> = {};
+
+  const requireAny = (flag: string, value: string | undefined): string => {
+    if (value === undefined) {
+      console.error(`Error: ${flag} requires a value`);
+      process.exit(1);
+    }
+    return value;
+  };
+
+  const requireNumber = (flag: string, knob: string, value: string | undefined): number => {
+    const raw = requireAny(flag, value);
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || (knob === 'depth' && parsed < 2)) {
+      console.error(`Error: --digest-${knob} requires a positive integer`);
+      process.exit(1);
+    }
+    return parsed;
+  };
 
   const requireValue = (flag: string, value: string | undefined): string => {
     if (!value) {
@@ -92,6 +125,22 @@ function parseArgs(args: string[]): ParsedArgs {
       configPath = requireValue('--config', args[++i]);
     } else if (arg === '--agents-dir' || arg === '-a') {
       agentsDirs.push(requireValue('--agents-dir', args[++i]));
+    } else if (arg === '--mode') {
+      const value = requireAny('--mode', args[++i]);
+      if (value !== 'digest' && value !== 'full') {
+        console.error("Error: --mode must be 'digest' or 'full'");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      mode = value;
+    } else if (arg === '--digest-depth') {
+      digest.depth = requireNumber(arg, 'depth', args[++i]);
+    } else if (arg === '--digest-line-chars') {
+      digest.lineChars = requireNumber(arg, 'line-chars', args[++i]);
+    } else if (arg === '--digest-minimal') {
+      digest.minimal = true;
+    } else if (arg === '--fetch-instructions') {
+      digest.fetchInstructions = requireAny(arg, args[++i]);
     } else if (!arg.startsWith('-')) {
       // Ignore positional arguments for backwards compat
       continue;
@@ -102,7 +151,7 @@ function parseArgs(args: string[]): ParsedArgs {
     }
   }
 
-  return { configPath, agentsDirs, debugFile };
+  return { configPath, agentsDirs, debugFile, mode, digest };
 }
 
 /**
@@ -164,6 +213,8 @@ async function main(): Promise<void> {
     const output = runHook(stdinData, {
       configPath: args.configPath,
       agentsDirs: args.agentsDirs,
+      mode: args.mode,
+      digest: args.digest,
       env,
       log,
     });

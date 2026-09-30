@@ -13,8 +13,11 @@ import {
   fetchPoliciesForReferences,
   formatSourceList,
   listPrefixes,
+  resolvePolicyInventory,
   validateReferences,
 } from '../src/operations.js';
+import { fetchSectionsWithIndex, gatherSectionsWithIndex } from '../src/resolver.js';
+import { sortSections } from '../src/parser.js';
 import { SectionIndex } from '../src/types.js';
 
 const FIXTURES_DIR = path.resolve(__dirname, 'fixtures', 'sample-policies');
@@ -134,6 +137,27 @@ describe('operations', () => {
       expect(() => fetchPoliciesForReferences(['§META.99'], index, FIXTURES_DIR)).toThrow(
         /§META\.99/
       );
+    });
+  });
+
+  describe('resolvePolicyInventory', () => {
+    it.each([[['§SYS.5']], [['§META']], [['§META', '§META.2']]])(
+      'fetch output for %j equals fetchSectionsWithIndex over expanded ids',
+      (refs) => {
+        const expanded = expandSectionsWithIndex(dedupeSupersededReferences(refs), index);
+        const unique = Array.from(new Set(expanded)).sort();
+        expect(fetchPoliciesForReferences(refs, index, FIXTURES_DIR)).toBe(
+          fetchSectionsWithIndex(unique, index, FIXTURES_DIR)
+        );
+      }
+    );
+
+    it('returns ids equal to sorted gathered keys including transitive sections', () => {
+      const inventory = resolvePolicyInventory(['§SYS.5'], index, FIXTURES_DIR);
+      const gathered = gatherSectionsWithIndex(['§SYS.5'], index, FIXTURES_DIR);
+      expect(inventory.map((s) => s.id)).toEqual(sortSections(Array.from(gathered.keys())));
+      expect(inventory.map((s) => s.id)).toContain('§TEST.3');
+      expect(inventory.map((s) => s.id)).toContain('§SYS.5');
     });
   });
 

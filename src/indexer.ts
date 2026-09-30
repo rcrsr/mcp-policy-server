@@ -14,10 +14,12 @@ import {
   SectionDetailsResult,
 } from './types.js';
 import {
+  collectSectionHeadings,
   detectCodeBlockRanges,
   expandRange,
   extractSectionFromLines,
   findEmbeddedReferences,
+  isImportantSection,
 } from './parser.js';
 
 /**
@@ -541,12 +543,26 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
     sectionsByFile.get(filePath)!.push({ id, prefix, sectionNum });
   }
 
-  for (const [filePath, sections] of sectionsByFile.entries()) {
-    let lines: string[];
+  // Read each file exactly once; a failed read is kept so it is reported in file order below
+  const readResults = new Map<string, { lines: string[] } | { reason: string }>();
+  const taggedIds = new Set<SectionNotation>();
+  for (const filePath of sectionsByFile.keys()) {
     try {
-      lines = fs.readFileSync(filePath, 'utf8').split('\n');
+      const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+      readResults.set(filePath, { lines });
+      for (const heading of collectSectionHeadings(lines)) {
+        if (heading.tagged) taggedIds.add(heading.id);
+      }
     } catch (error) {
       const reason = `Failed to read ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
+      readResults.set(filePath, { reason });
+    }
+  }
+
+  for (const [filePath, sections] of sectionsByFile.entries()) {
+    const readResult = readResults.get(filePath)!;
+    if ('reason' in readResult) {
+      const { reason } = readResult;
       console.error(`[ERROR] ${reason}`);
       console.error(`  Skipping ${sections.length} section(s) in list-sections output`);
       for (const { id } of sections) {
@@ -554,6 +570,7 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
       }
       continue;
     }
+    const { lines } = readResult;
 
     for (const { id, prefix, sectionNum } of sections) {
       try {
@@ -564,7 +581,14 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
           .filter((r) => r !== id)
           .sort();
 
-        details.push({ id, prefix, file: path.relative(baseDir, filePath), byteLength, refs });
+        details.push({
+          id,
+          prefix,
+          file: path.relative(baseDir, filePath),
+          byteLength,
+          refs,
+          important: isImportantSection(id, taggedIds),
+        });
       } catch (error) {
         const reason = `Failed to extract section from ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(
@@ -577,4 +601,47 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
   }
 
   return { details: details.sort((a, b) => a.id.localeCompare(b.id)), skipped };
+}
+
+/**
+ * Find the sections tagged important in the files holding the given ids
+ *
+ * Reads each distinct file (looked up in index.sectionMap) that holds an id or
+ * one of its numeric ancestors, and returns every tagged heading found there.
+ * Pair with isImportantSection to test a section against its ancestors.
+ *
+ * @param ids - Section ids to inspect
+ * @param index - Section index
+ * @returns Ids of tagged headings in those files
+ * @throws {Error} When a file cannot be read
+ */
+export function findTaggedSections(
+  ids: SectionNotation[],
+  index: SectionIndex
+): Set<SectionNotation> {
+  const files = new Set<string>();
+  for (const id of ids) {
+    let current: string = id;
+    while (current.includes('.')) {
+      const file = index.sectionMap.get(current as SectionNotation);
+      if (file) files.add(file);
+      current = current.substring(0, current.lastIndexOf('.'));
+    }
+  }
+
+  const tagged = new Set<SectionNotation>();
+  for (const file of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(file, 'utf8');
+    } catch (error) {
+      throw new Error(
+        `Failed to read ${file}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    for (const heading of collectSectionHeadings(content.split('\n'))) {
+      if (heading.tagged) tagged.add(heading.id);
+    }
+  }
+  return tagged;
 }

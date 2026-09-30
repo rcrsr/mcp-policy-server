@@ -519,3 +519,83 @@ describe('buildSectionDetails error handling', () => {
     expect(skipped[2].reason).toBe(skipped[1].reason);
   });
 });
+
+describe('buildSectionDetails important flag', () => {
+  const testDir = path.join(__dirname, 'fixtures', 'section-important-test');
+  const testFile = path.join(testDir, 'important.md');
+
+  afterEach(() => {
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  function detailsFor(lines: string[]): Map<string, boolean> {
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(testFile, lines.join('\n'));
+    const index = buildSectionIndex({ files: [testFile], baseDir: testDir, maxChunkTokens: 10000 });
+    const { details } = buildSectionDetails(index, testDir);
+    return new Map(details.map((d) => [d.id, d.important]));
+  }
+
+  test('tagged parent marks the parent and every child important; untagged sibling is not', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} [IMPORTANT] Tagged',
+      'Body.',
+      '### {§IMP.1.1} Child',
+      'Child body.',
+      '### {§IMP.1.2} Other child',
+      'Other body.',
+      '## {§IMP.2} Untagged',
+      'Body.',
+    ]);
+
+    expect(flags.get('§IMP.1')).toBe(true);
+    expect(flags.get('§IMP.1.1')).toBe(true);
+    expect(flags.get('§IMP.1.2')).toBe(true);
+    expect(flags.get('§IMP.2')).toBe(false);
+  });
+
+  test('tagged child under an untagged parent is important only for that child', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} Untagged parent',
+      'Body.',
+      '### {§IMP.1.1} [IMPORTANT] Tagged child',
+      'Child body.',
+      '### {§IMP.1.2} Untagged sibling',
+      'Sibling body.',
+    ]);
+
+    expect(flags.get('§IMP.1')).toBe(false);
+    expect(flags.get('§IMP.1.1')).toBe(true);
+    expect(flags.get('§IMP.1.2')).toBe(false);
+  });
+
+  test('tagged parent marks deeper descendants important', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} [IMPORTANT] Tagged',
+      'Body.',
+      '### {§IMP.1.1} Child',
+      'Child body.',
+      '### {§IMP.1.1.1} Grandchild',
+      'Grandchild body.',
+    ]);
+
+    expect(flags.get('§IMP.1.1.1')).toBe(true);
+  });
+
+  test('tagged middle section marks its grandchild important but not its untagged ancestor or sibling', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} Untagged root',
+      'Body.',
+      '### {§IMP.1.1} [IMPORTANT] Tagged middle',
+      'Middle body.',
+      '### {§IMP.1.1.1} Grandchild',
+      'Grandchild body.',
+      '### {§IMP.1.2} Untagged sibling',
+      'Sibling body.',
+    ]);
+
+    expect(flags.get('§IMP.1.1.1')).toBe(true);
+    expect(flags.get('§IMP.1')).toBe(false);
+    expect(flags.get('§IMP.1.2')).toBe(false);
+  });
+});

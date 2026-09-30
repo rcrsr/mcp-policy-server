@@ -6,11 +6,16 @@
  * output channel; the behaviour lives here exactly once.
  */
 
-import { expandRange, findEmbeddedReferences, PREFIX_ONLY_PATTERN } from './parser.js';
-import { fetchSectionsWithIndex } from './resolver.js';
+import {
+  expandRange,
+  findEmbeddedReferences,
+  PREFIX_ONLY_PATTERN,
+  sortSections,
+} from './parser.js';
+import { gatherSectionsWithIndex, joinSectionContents } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { ServerConfig } from './config.js';
-import { SectionIndex, SectionNotation } from './types.js';
+import { InventorySection, SectionIndex, SectionNotation } from './types.js';
 
 /**
  * Pattern extracting the prefix from a fully-qualified section id (§APP.7 → APP)
@@ -114,11 +119,45 @@ export function dedupeSupersededReferences(
 }
 
 /**
- * Fetch policy content for a list of references
+ * Resolve references to the ordered inventory of sections they pull in
  *
  * Drops references superseded by a prefix-only reference in the same list,
  * expands prefix-only and range notation against the index, deduplicates,
- * sorts, then fetches with recursive § resolution.
+ * sorts, gathers with recursive § resolution, and returns sections in
+ * canonical order.
+ *
+ * @param references - Section notations (any supported form)
+ * @param index - Section index
+ * @param baseDir - Base directory for relative file names
+ * @param onSuperseded - Optional callback invoked for each dropped reference
+ * @returns Sections (including transitive ones) sorted by notation, each with its id
+ * @throws {Error} When a reference cannot be resolved
+ */
+export function resolvePolicyInventory(
+  references: string[],
+  index: SectionIndex,
+  baseDir: string,
+  onSuperseded?: (reference: string, prefix: string) => void
+): InventorySection[] {
+  const deduped = dedupeSupersededReferences(references, onSuperseded);
+  const expanded = expandSectionsWithIndex(deduped, index);
+  const unique = Array.from(new Set(expanded)).sort() as SectionNotation[];
+  const gathered = gatherSectionsWithIndex(unique, index, baseDir);
+  const inventory: InventorySection[] = [];
+  for (const id of sortSections(Array.from(gathered.keys()) as SectionNotation[])) {
+    const section = gathered.get(id);
+    if (section) {
+      inventory.push({ ...section, id });
+    }
+  }
+  return inventory;
+}
+
+/**
+ * Fetch policy content for a list of references
+ *
+ * Joins the inventory section contents with newlines; sections already carry
+ * their trailing separators in the markdown.
  *
  * @param references - Section notations (any supported form)
  * @param index - Section index
@@ -133,10 +172,17 @@ export function fetchPoliciesForReferences(
   baseDir: string,
   onSuperseded?: (reference: string, prefix: string) => void
 ): string {
-  const deduped = dedupeSupersededReferences(references, onSuperseded);
-  const expanded = expandSectionsWithIndex(deduped, index);
-  const unique = Array.from(new Set(expanded)).sort() as SectionNotation[];
-  return fetchSectionsWithIndex(unique, index, baseDir);
+  return joinInventory(resolvePolicyInventory(references, index, baseDir, onSuperseded));
+}
+
+/**
+ * Join an ordered inventory into the combined policy content
+ *
+ * @param inventory - Sections in output order
+ * @returns Combined section content
+ */
+export function joinInventory(inventory: InventorySection[]): string {
+  return joinSectionContents(inventory.map((section) => section.content));
 }
 
 /**

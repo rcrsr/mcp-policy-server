@@ -296,8 +296,20 @@ export function fetchSectionsWithIndex(
     }
   }
 
-  // Join sections without adding separators - sections already have trailing separators in the markdown
-  return parts.join('\n');
+  return joinSectionContents(parts);
+}
+
+/**
+ * Join section contents in output order
+ *
+ * Adds no separators beyond a newline - sections already carry their trailing
+ * separators in the markdown. Single place defining how fetched sections combine.
+ *
+ * @param contents - Section contents in output order
+ * @returns Combined content
+ */
+export function joinSectionContents(contents: string[]): string {
+  return contents.join('\n');
 }
 
 /**

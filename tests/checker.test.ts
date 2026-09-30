@@ -14,6 +14,86 @@ const EXAMPLES_POLICY = path.join(FIXTURES_DIR, 'policy-with-examples.md');
 
 describe('checker', () => {
   describe('checkPolicyContent', () => {
+    it('should report MALFORMED_TAG once for brackets inside the braces', () => {
+      const result = checkPolicyContent('## {§PY.1} A\n\n## {§PY.2 [IMPORTANT]} B\n');
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0]).toMatchObject({
+        line: 3,
+        severity: 'error',
+        code: 'MALFORMED_TAG',
+      });
+    });
+
+    it('should report MALFORMED_TAG for a bracketed token after the brace that is not exactly [IMPORTANT]', () => {
+      for (const tag of [
+        '[IMPORTANT ]',
+        '[ IMPORTANT ]',
+        '[important]',
+        '[IMPORTANTT]',
+        '[IMPORTENT]',
+      ]) {
+        const result = checkPolicyContent(`## {§PY.1} ${tag} Title\n`);
+        expect(result.valid).toBe(false);
+        expect(result.issues).toHaveLength(1);
+        expect(result.issues[0]).toMatchObject({
+          severity: 'error',
+          code: 'MALFORMED_TAG',
+        });
+      }
+    });
+
+    it('should accept a bracketed title that does not read as important', () => {
+      for (const title of ['[Deprecated] Title', '[link](url) Title']) {
+        const result = checkPolicyContent(`## {§PY.1} ${title}\n`);
+        expect(result.issues.filter((issue) => issue.code === 'MALFORMED_TAG')).toEqual([]);
+        expect(result.valid).toBe(true);
+      }
+    });
+
+    it('should report MALFORMED_TAG for [IMPORTANT] elsewhere in the heading', () => {
+      for (const heading of [
+        '## {§PY.1} Title [IMPORTANT]',
+        '## {§PY.1} title [important] text',
+        '## {§PY.1} [IMPORTANT] Title [IMPORTANT]',
+      ]) {
+        const result = checkPolicyContent(`${heading}\n`);
+        expect(result.valid).toBe(false);
+        expect(result.issues).toHaveLength(1);
+        expect(result.issues[0]).toMatchObject({
+          severity: 'error',
+          code: 'MALFORMED_TAG',
+        });
+      }
+    });
+
+    it('should report only MALFORMED_TAG when a tag error coexists with a non-matching section id', () => {
+      const result = checkPolicyContent('## {§APP.x} [important] T\n');
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0]).toMatchObject({ severity: 'error', code: 'MALFORMED_TAG' });
+    });
+
+    it('should accept a correctly tagged heading and still count it for numbering', () => {
+      const ok = checkPolicyContent('## {§PY.1} [IMPORTANT] A\n\n### {§PY.1.1} [IMPORTANT] Sub\n');
+      expect(ok.valid).toBe(true);
+      expect(ok.issues).toHaveLength(0);
+
+      const gap = checkPolicyContent('## {§PY.1} A\n\n## {§PY.3} [IMPORTANT] C\n');
+      expect(gap.issues.map((i) => i.code)).toEqual(['NUMBERING_GAP']);
+    });
+
+    it('should ignore malformed tags inside code fences', () => {
+      const result = checkPolicyContent(
+        '## {§PY.1} A\n\n```md\n## {§PY.2 [IMPORTANT]} B\n## {§PY.3} [nope] C\n```\n'
+      );
+
+      expect(result.valid).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
     it('should return valid for well-formed policy content', () => {
       const content = `# Application Policy
 
@@ -428,8 +508,18 @@ Content.
         errors: 2,
         warnings: 0,
         issues: [
-          { line: 5, severity: 'error' as const, code: 'MALFORMED_SECTION', message: 'Bad format' },
-          { line: 10, severity: 'error' as const, code: 'UNCLOSED_FENCE', message: 'Not closed' },
+          {
+            line: 5,
+            severity: 'error' as const,
+            code: 'MALFORMED_SECTION',
+            message: 'Bad format',
+          },
+          {
+            line: 10,
+            severity: 'error' as const,
+            code: 'UNCLOSED_FENCE',
+            message: 'Not closed',
+          },
         ],
       };
 
@@ -472,8 +562,18 @@ Content.
         errors: 1,
         warnings: 1,
         issues: [
-          { line: 5, severity: 'error' as const, code: 'ERROR', message: 'An error' },
-          { line: 10, severity: 'warning' as const, code: 'WARN', message: 'A warning' },
+          {
+            line: 5,
+            severity: 'error' as const,
+            code: 'ERROR',
+            message: 'An error',
+          },
+          {
+            line: 10,
+            severity: 'warning' as const,
+            code: 'WARN',
+            message: 'A warning',
+          },
         ],
       };
 

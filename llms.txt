@@ -29,13 +29,14 @@ MCP tools (server name `policy-server`, Claude Code tool names `mcp__policy-serv
 
 CLI subcommands (`policy-cli`):
 
-- `fetch-policies <file>`: extract § references from a file and print the resolved policy content.
+- `fetch-policies <ref>...` or `fetch-policies <file>`: print the resolved policy content for § references given as arguments, or for the § references found in a file. Arguments starting with `§` are references; do not mix references and a file. Ranges, prefix-only references, recursive resolution, and dropping references covered by a prefix-only reference behave exactly as in the hook. Exit code 1 when a reference does not resolve, with an error naming it.
+  Example: `policy-cli fetch-policies §CODE.1 §API.2.3-5 --config "./policies/*.md"`
 - `validate-references <ref>...`: print a JSON validation result. Exit code 1 when any reference is invalid.
 - `extract-references <file>`: print the § references in a file as a JSON array. Needs no `--config`.
 - `list-sources`: print configured files, statistics, and prefixes.
-- `list-sections`: print every indexed section as JSON with `id`, `prefix`, `file`, `byteLength`, and outbound `refs`.
+- `list-sections`: print every indexed section as JSON with `id`, `prefix`, `file`, `byteLength`, outbound `refs`, and `important` (true when the section is tagged `[IMPORTANT]` or inherits the tag from a parent).
 - `resolve-references <ref>...`: print the file-to-sections map as JSON.
-- `check <file>`: lint one policy file. Reports `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP` (errors) and `MIXED_PREFIX` (warning). Exit code 1 on errors. Needs no `--config`.
+- `check <file>`: lint one policy file. Reports `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP`, `MALFORMED_TAG` (errors) and `MIXED_PREFIX` (warning). Exit code 1 on errors. Needs no `--config`.
 - `-c, --config <value>` accepts a glob (`./policies/*.md`), a path to a `policies.json` manifest (`{"files": [...]}`), or inline JSON. Falls back to `MCP_POLICY_CONFIG`, then `./policies.json`. Globs and inline JSON resolve relative to the working directory. Paths inside a manifest resolve relative to the manifest's directory.
 
 Hook (`policy-hook`, Claude Code `PreToolUse` on matcher `Task`):
@@ -43,13 +44,16 @@ Hook (`policy-hook`, Claude Code `PreToolUse` on matcher `Task`):
 - Reads the tool call JSON on stdin. Looks up `tool_input.subagent_type` as `<name>.md` in the agents directories, scans that file for § references, fetches them, and returns `hookSpecificOutput.updatedInput.prompt` with the policies appended.
 - Returns `{"permissionDecision": "allow"}` unchanged when the agent file is missing, has no references, or declares `mcp__policy-server__fetch_policies` in its `tools` frontmatter.
 - Returns `permissionDecision: "deny"` with a reason when a referenced section does not exist or is duplicated. Fix the reference or the policy file.
-- Options: `-c, --config`, `-a, --agents-dir` (repeatable, searched in order), `-d, --debug <file>`. With no options it auto-discovers `$CLAUDE_PROJECT_DIR/.claude/agents`, `$CLAUDE_PROJECT_DIR/.claude/policies/*.md`, `$CLAUDE_PLUGIN_ROOT/agents`, and `$CLAUDE_PLUGIN_ROOT/policies/*.md`.
+- Options: `-c, --config`, `-a, --agents-dir` (repeatable, searched in order), `-d, --debug <file>`, `--mode <digest|full>` (default `full`), `--digest-depth <n>` (default 2), `--digest-line-chars <n>` (default 200, excluding the full-text marker), `--digest-minimal`, `--fetch-instructions <text>`. Digest flags are accepted and ignored in full mode. Invalid flag values exit 1. `--digest-depth` and `--digest-line-chars` need a positive integer; `--digest-depth` has a minimum of 2. With no options it auto-discovers `$CLAUDE_PROJECT_DIR/.claude/agents`, `$CLAUDE_PROJECT_DIR/.claude/policies/*.md`, `$CLAUDE_PLUGIN_ROOT/agents`, and `$CLAUDE_PLUGIN_ROOT/policies/*.md`.
+- Full mode injects the complete text of every referenced section. Digest mode injects, in order: a digest block with one line per section (`§ID Title: first sentence of the body`; `: sentence` is omitted when the body is empty; `§ID: sentence` when there is no title; `[IMPORTANT]` sections are included and marked `(full text below)`), then one full-text block containing only the `[IMPORTANT]` sections, then a footer. `--digest-depth` counts numeric levels (`§D.4` is 1, `§D.4.1` is 2); nested sections tagged important are listed even when deeper than the depth. With `--digest-minimal`, every line is `§ID Title` only.
+- Default footer: states that the content above is a digest and how to fetch full text: `policy-cli fetch-policies --config '<absolute active config>' §ID ...`. The `--config '...'` part is omitted when no config value is in effect, and an inline JSON config is quoted as given, not made absolute. `--fetch-instructions '<text>'` replaces the whole statement.
 
 Writing a policy file:
 
 - Whole sections use exactly `## {§PREFIX.N} Title`. Subsections use `### {§PREFIX.N.M} Title`. A whole section runs until the next `## {§PREFIX.` heading with the same prefix, a `{§END}` line, or end of file. A subsection runs until the next `##` or `###` heading that starts with `{§`, or end of file.
 - Every section ID must be unique across all configured files. Duplicates are excluded from the index and fail validation.
 - Number sections sequentially from 1. Run `policy-cli check <file>` after editing.
+- Mark a section important with exactly ` [IMPORTANT]` (uppercase, one space) directly after the closing brace: `## {§PREFIX.N} [IMPORTANT] Title`. The title is optional. A tagged section makes all its nested subsections important; a tag on a subsection affects only that subsection and its descendants. Any other bracketed token directly after `}` (`[important]`, `[IMPORTANT ]`) is a `MALFORMED_TAG` error, as is `[` inside the braces and `[IMPORTANT]` (any case) later in the title: the tag must come directly after the brace, followed by a space. The tag does not change section extraction.
 - Cross-reference with plain § text in the body. Put example references inside code fences so they are not followed.
 
 ## Documentation

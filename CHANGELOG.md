@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Digest mode for policy-hook:** `--mode digest` injects one `§ID Title: first sentence` line per section, then the full text of `[IMPORTANT]` sections, then a footer on how to fetch the rest. Options: `--digest-depth`, `--digest-line-chars`, `--digest-minimal` (title-only lines), and `--fetch-instructions` (replaces the default footer). Full mode stays the default and is unchanged. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
+- **[IMPORTANT] section tag:** `## {§PY.7} [IMPORTANT] Title` marks a section and its children to be injected in full in digest mode. `policy-cli check` reports `MALFORMED_TAG` errors and `list-sections` gains an `important` field. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
+- **§ references in fetch-policies:** `policy-cli fetch-policies §PY.4 §PY.7.2` resolves references given as arguments, with the same expansion and de-duplication as the hook. Mixing references with a file argument exits 1. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
+
+### Changed
+
+- **Heading tag check:** `policy-cli check` now errors on any bracketed token directly after the closing brace of a section heading other than `[IMPORTANT]`. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
+
 ## [0.7.0] - 2026-09-08
 
 ### Added
