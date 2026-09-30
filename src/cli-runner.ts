@@ -64,11 +64,11 @@ Usage: policy-cli <subcommand> [args] [options]
 CLI for policy documentation operations.
 
 Subcommands:
-  fetch-policies      Fetch policy content for § references from a file
+  fetch-policies      Fetch policy content for § references (arguments or a file)
   validate-references Validate that § references exist and are unique
   extract-references  Extract § references from a file
   list-sources        List available policy files and section prefixes
-  list-sections       List per-section detail (id, prefix, file, byteLength, refs) as JSON
+  list-sections       List per-section detail (id, prefix, file, byteLength, refs, important) as JSON
   resolve-references  Map § references to their source files
   check               Validate policy file format (sections, numbering, fencing)
 
@@ -79,6 +79,7 @@ Options:
 
 Examples:
   policy-cli fetch-policies document.md --config "./policies/*.md"
+  policy-cli fetch-policies §DOC.1 §DOC.2.1-3 --config "./policies/*.md"
   policy-cli validate-references §DOC.1 §DOC.2
   policy-cli extract-references agent.md
   policy-cli list-sources
@@ -88,19 +89,24 @@ Examples:
 
 export const SUBCOMMAND_USAGE: Record<Subcommand, string> = {
   'fetch-policies': `
-Usage: policy-cli fetch-policies <file> [options]
+Usage: policy-cli fetch-policies <ref>... | <file> [options]
 
-Fetch policy content for § references found in a file.
+Fetch policy content for § references given as arguments or found in a file.
 
 Arguments:
-  <file>  File to extract § references from
+  <ref>...  One or more § references (e.g., §DOC.1 §DOC.2.1-3 §DOC)
+  <file>    File to extract § references from
+
+Arguments starting with § are references. Do not mix references and a file;
+pass a file whose name starts with § as ./§name.md.
 
 Options:
   -c, --config <path>  Path to policies.json or glob pattern
   -h, --help           Show this help
 
-Example:
+Examples:
   policy-cli fetch-policies agent.md --config "./policies/*.md"
+  policy-cli fetch-policies §DOC.1 §DOC.2.1-3 --config "./policies/*.md"
 `,
   'validate-references': `
 Usage: policy-cli validate-references <ref>... [options]
@@ -147,10 +153,11 @@ Example:
   'list-sections': `
 Usage: policy-cli list-sections [options]
 
-List per-section detail (id, prefix, file, byteLength, refs) as JSON.
+List per-section detail (id, prefix, file, byteLength, refs, important) as JSON.
 
 Each record's refs field is that section's outbound § references, computed
 with the same fence/inline-code exclusion extract-references applies.
+Each record's important field is true when the section is tagged [IMPORTANT] or inherits the tag from a parent section.
 
 Options:
   -c, --config <path>  Path to policies.json or glob pattern
@@ -181,6 +188,7 @@ Validate policy file format including sections, numbering, and code fencing.
 
 Checks performed:
   - Section header format ({§PREFIX.NUMBER})
+  - Important tag syntax (MALFORMED_TAG is an error)
   - Heading level correctness (## for sections, ### for subsections)
   - Code fence matching (all opened blocks closed)
   - Orphan subsections (subsections without parent section)
@@ -264,7 +272,10 @@ function usageError(subcommand: Subcommand, message: string): CliResult {
   return fail(`Error: ${message}\n${SUBCOMMAND_USAGE[subcommand]}`);
 }
 
-function loadConfigAndIndex(configPath?: string): { config: ServerConfig; index: SectionIndex } {
+function loadConfigAndIndex(configPath?: string): {
+  config: ServerConfig;
+  index: SectionIndex;
+} {
   const config = loadConfig(configPath);
   const index = buildSectionIndex(config);
   return { config, index };
@@ -286,7 +297,16 @@ function resolveExistingFile(
 
 function fetchPolicies(args: string[], configPath: string | undefined, cwd: string): CliResult {
   if (args.length === 0) {
-    return usageError('fetch-policies', 'fetch-policies requires a file argument');
+    return usageError('fetch-policies', 'fetch-policies requires a file argument or § references');
+  }
+
+  const referenceArgs = args.filter((arg) => arg.startsWith('§'));
+  if (referenceArgs.length === args.length) {
+    const { config, index } = loadConfigAndIndex(configPath);
+    return ok(fetchPoliciesForReferences(args, index, config.baseDir));
+  }
+  if (referenceArgs.length > 0) {
+    return usageError('fetch-policies', 'fetch-policies accepts § references or a file, not both');
   }
 
   const resolved = resolveExistingFile(args[0], cwd);

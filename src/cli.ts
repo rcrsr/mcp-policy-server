@@ -3,11 +3,11 @@
  * CLI binary for policy operations
  *
  * Subcommands:
- *   fetch-policies      Fetch policy content for § references
+ *   fetch-policies      Fetch policy content for § references (arguments or a file)
  *   validate-references Validate § references exist and are unique
  *   extract-references  Extract § references from a file
  *   list-sources        List available policy files and prefixes
- *   list-sections       List per-section detail (id, prefix, file, byteLength, refs)
+ *   list-sections       List per-section detail (id, prefix, file, byteLength, refs, important)
  *   resolve-references  Map § references to source files
  *   check               Validate policy file format
  *

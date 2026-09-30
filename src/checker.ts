@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import { CheckIssue, CheckResult } from './types.js';
+import { IMPORTANT_TAG } from './parser.js';
 
 // Section header pattern: ## {§PREFIX.NUMBER} or ### {§PREFIX.NUMBER.SUBSECTION}
 const SECTION_HEADER_PATTERN =
@@ -15,6 +16,40 @@ const MALFORMED_SECTION_PATTERN = /^(#{2,})\s*\{§/;
 
 // Code fence pattern (captures backtick count and optional language)
 const CODE_FENCE_PATTERN = /^(`{3,})(\S*)/;
+
+/**
+ * Find a malformed importance tag on a § heading line
+ *
+ * Covers brackets inside the braces, a bracketed token after the closing brace
+ * that is not exactly ` [IMPORTANT]`, and `[IMPORTANT]` (any case) in the title.
+ *
+ * @returns Error message, or null when the tags are well-formed
+ */
+function findMalformedTag(line: string): string | null {
+  const open = line.indexOf('{§');
+  const close = line.indexOf('}', open);
+  if (close === -1) return null;
+
+  if (line.slice(open, close).includes('[')) {
+    return `Malformed tag: brackets are not allowed inside the braces. Place ${IMPORTANT_TAG} after the closing brace, e.g. ## {§PREFIX.NUMBER} ${IMPORTANT_TAG} Title`;
+  }
+
+  let rest = line.slice(close + 1);
+  const bracketed = /^\s*\[[^\]]*\]/.exec(rest);
+  if (bracketed) {
+    const exact =
+      rest.startsWith(` ${IMPORTANT_TAG}`) && /^\s|^$/.test(rest.slice(1 + IMPORTANT_TAG.length));
+    if (!exact) {
+      return `Malformed tag "${bracketed[0].trim()}" after the closing brace. Only exactly ${IMPORTANT_TAG} (uppercase, one space after the brace) is allowed`;
+    }
+    rest = rest.slice(1 + IMPORTANT_TAG.length);
+  }
+
+  if (/\[important\]/i.test(rest)) {
+    return `Malformed tag: ${IMPORTANT_TAG} must appear directly after the closing brace, once, before the title`;
+  }
+  return null;
+}
 
 /**
  * Check a policy file for format issues
@@ -56,7 +91,12 @@ export function checkPolicyContent(content: string): CheckResult {
   let inCodeBlock = false;
   let codeBlockStartLine = 0;
   let codeBlockFenceLength = 0;
-  const sections: Array<{ line: number; prefix: string; number: string; depth: number }> = [];
+  const sections: Array<{
+    line: number;
+    prefix: string;
+    number: string;
+    depth: number;
+  }> = [];
   let detectedPrefix: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -86,6 +126,20 @@ export function checkPolicyContent(content: string): CheckResult {
     // Skip content inside code blocks
     if (inCodeBlock) {
       continue;
+    }
+
+    // Check for malformed importance tags (replaces the generic malformed-section issue)
+    if (MALFORMED_SECTION_PATTERN.test(line)) {
+      const tagMessage = findMalformedTag(line);
+      if (tagMessage) {
+        issues.push({
+          line: lineNum,
+          severity: 'error',
+          code: 'MALFORMED_TAG',
+          message: tagMessage,
+        });
+        if (!SECTION_HEADER_PATTERN.test(line)) continue;
+      }
     }
 
     // Check for malformed section headers
@@ -179,7 +233,12 @@ export function checkPolicyContent(content: string): CheckResult {
  * Check for orphan subsections (subsection without parent whole section)
  */
 function checkOrphanSubsections(
-  sections: Array<{ line: number; prefix: string; number: string; depth: number }>,
+  sections: Array<{
+    line: number;
+    prefix: string;
+    number: string;
+    depth: number;
+  }>,
   issues: CheckIssue[]
 ): void {
   const wholeSections = new Set<string>();
@@ -213,7 +272,12 @@ function checkOrphanSubsections(
  * Check for non-sequential section numbering
  */
 function checkNumberingSequence(
-  sections: Array<{ line: number; prefix: string; number: string; depth: number }>,
+  sections: Array<{
+    line: number;
+    prefix: string;
+    number: string;
+    depth: number;
+  }>,
   issues: CheckIssue[]
 ): void {
   // Group by prefix and parent

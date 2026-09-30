@@ -82,7 +82,22 @@ Configure hooks in your project's `.claude/settings.json`.
 | `-c, --config <value>` | No | Glob pattern, `policies.json` path, or inline JSON (see Default Discovery below) |
 | `-a, --agents-dir <path>` | No | Agent files directory (can be specified multiple times; see Default Discovery below) |
 | `-d, --debug <file>` | No | Append a trace of each run to `<file>` for troubleshooting |
+| `--mode <digest\|full>` | No | `full` (default) injects all referenced policy text. `digest` injects a digest block, then the full text of `[IMPORTANT]` sections, then a footer |
+| `--digest-depth <n>` | No | Deepest nested section level listed in the digest (default 2, minimum 2; `§D.4` is level 1, `§D.4.1` is level 2). Nested sections tagged important are listed even when deeper |
+| `--digest-line-chars <n>` | No | Maximum characters per digest line (default 200) |
+| `--digest-budget <n>` | No | Maximum digest characters (default 8000). Above it, every line degrades to `§ID Title` and the footer says so |
+| `--fetch-instructions <text>` | No | Replaces the whole default footer statement. The over-budget notice is still appended |
 | `-h, --help` | No | Print usage and exit |
+
+Digest flags are accepted and ignored in full mode. An invalid flag or value exits 1. Every digest flag needs a positive integer; `--digest-depth` has a minimum of 2.
+
+#### Digest mode layout
+
+1. Digest block: one line per section, `§ID Title: first sentence of the body`. `: sentence` is omitted when the body is empty; `§ID: sentence` when there is no title. `[IMPORTANT]` sections are listed too, marked `(full text below)`.
+2. Full-text block: only the `[IMPORTANT]` sections (including important nested sections).
+3. Footer: by default, a statement that the content above is a digest and how to fetch full text: `policy-cli fetch-policies --config '<absolute active config>' §ID ...`. The `--config '...'` part is omitted when no config value is in effect, and an inline JSON config is quoted as given, not made absolute. Use `--fetch-instructions` to replace it.
+
+Full mode output is unchanged by these options.
 
 `policy-fetch` remains as an alias for `policy-hook`. The `--hook` flag and positional arguments are accepted and ignored for backwards compatibility.
 
@@ -272,15 +287,15 @@ The `policy-cli` binary provides subcommands for policy operations.
 
 | Subcommand | Description | Needs config | Exit code 1 when |
 |------------|-------------|--------------|------------------|
-| `fetch-policies <file>` | Fetch policy content for § references in a file | Yes | A reference fails to resolve |
+| `fetch-policies <ref>...` or `fetch-policies <file>` | Fetch policy content for § references given as arguments (each starting with `§`; do not mix with a file) or found in a file | Yes | A reference fails to resolve |
 | `validate-references <ref>...` | Validate that § references exist and are unique; prints JSON | Yes | Any reference is invalid |
 | `extract-references <file>` | Extract § references from a file as a sorted JSON array | No | File not found |
 | `list-sources` | List available policy files, index statistics, and prefixes | Yes | Config error |
-| `list-sections` | List every section as JSON: `id`, `prefix`, `file`, `byteLength`, `refs` | Yes | Any section could not be read |
+| `list-sections` | List every section as JSON: `id`, `prefix`, `file`, `byteLength`, `refs`, `important` | Yes | Any section could not be read |
 | `resolve-references <ref>...` | Map § references to source files as JSON | Yes | A reference fails to resolve |
 | `check <file>` | Lint one policy file: header format, heading levels, code fences, orphan subsections, numbering gaps | No | Any error-level issue |
 
-`check` issue codes: `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP` are errors; `MIXED_PREFIX` is a warning. Warnings do not affect the exit code.
+`check` issue codes: `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP`, `MALFORMED_TAG` are errors; `MIXED_PREFIX` is a warning. Warnings do not affect the exit code.
 
 ### Common Options
 
@@ -294,6 +309,9 @@ Running `policy-cli` with no subcommand prints usage and exits 1. Help text, con
 ### Usage Examples
 
 ```bash
+# Fetch policies by reference
+policy-cli fetch-policies §CODE.1 §API.2.3-5 --config "./policies/*.md"
+
 # Fetch policies from a file
 policy-cli fetch-policies document.md --config "./policies/*.md"
 

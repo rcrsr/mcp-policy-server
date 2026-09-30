@@ -4,7 +4,7 @@
  */
 
 import * as fs from 'fs';
-import { ParsedSection, SectionNotation } from './types.js';
+import { ParsedSection, SectionHeading, SectionNotation } from './types.js';
 
 // Regex patterns for section notation parsing
 // Prefix format: starts with letter, then letters/digits/hyphens (e.g., CODE, CODE2, APP-HOOK)
@@ -23,6 +23,13 @@ const SECTION_MARKER_PATTERN = /^##?#? \{§/;
  * Used to fetch all sections from a document
  */
 export const PREFIX_ONLY_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)$/;
+
+/** Tag marking a section heading as important, placed directly after the closing brace */
+export const IMPORTANT_TAG = '[IMPORTANT]';
+
+// Heading grammar: #{2,}, whitespace, {§ID}, optional " [IMPORTANT]", optional title
+const SECTION_HEADING_PATTERN =
+  /^(#{2,})\s+\{(§[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*\.\d+(?:\.\d+)*)\}( \[IMPORTANT\](?=\s|$))?(.*)$/;
 
 // Sections are sorted alphabetically by prefix, then numerically by section number
 
@@ -466,4 +473,75 @@ export function sortSections(notations: SectionNotation[]): SectionNotation[] {
 
     return 0;
   });
+}
+
+/**
+ * Parse a heading line of the form `## {§ID} [IMPORTANT] Title`
+ *
+ * The `[IMPORTANT]` tag is optional and must be uppercase, separated from the
+ * closing brace by a single space. The returned title is trimmed and never
+ * contains the tag. Lines that are not § headings return null.
+ *
+ * @param line - Single line of a policy file
+ * @returns Parsed heading (lineIndex 0), or null for non-§ headings
+ */
+export function parseSectionHeading(line: string): SectionHeading | null {
+  const match = SECTION_HEADING_PATTERN.exec(line);
+  if (!match) return null;
+  return {
+    id: match[2],
+    depth: match[1].length,
+    title: match[4].trim(),
+    tagged: match[3] !== undefined,
+    lineIndex: 0,
+  };
+}
+
+/**
+ * Collect all § section headings in document order
+ *
+ * Headings inside fenced code blocks are ignored, using the same fence
+ * toggling as extractRange.
+ *
+ * @param lines - File content split on newlines
+ * @returns Headings with their line indexes
+ */
+export function collectSectionHeadings(lines: string[]): SectionHeading[] {
+  const headings: SectionHeading[] = [];
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+    const heading = parseSectionHeading(line);
+    if (heading) headings.push({ ...heading, lineIndex: i });
+  }
+
+  return headings;
+}
+
+/**
+ * Check whether a section or any numeric ancestor is tagged important
+ *
+ * §PY.7.2.1 is important when §PY.7.2.1, §PY.7.2, or §PY.7 is tagged.
+ * Ancestry is by numeric segment, so §PYX.7 is not a child of §PY.7.
+ *
+ * @param id - Section to test
+ * @param tagged - Set of tagged section ids
+ * @returns True when id or an ancestor is tagged
+ */
+export function isImportantSection(
+  id: SectionNotation,
+  tagged: ReadonlySet<SectionNotation>
+): boolean {
+  let current = id;
+  while (current.includes('.')) {
+    if (tagged.has(current)) return true;
+    current = current.substring(0, current.lastIndexOf('.'));
+  }
+  return false;
 }

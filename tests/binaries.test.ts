@@ -57,6 +57,24 @@ describe.skipIf(!fs.existsSync(path.join(DIST, 'cli.js')))('built binaries', () 
       expect(JSON.parse(stdout)).toMatchObject({ valid: true, checked: 1 });
     });
 
+    it('fetches § references passed as arguments', () => {
+      const { status, stdout } = run('cli.js', ['fetch-policies', '§META.1', '-c', META_GLOB]);
+      expect(status).toBe(0);
+      expect(stdout).toContain('## {§META.1}');
+    });
+
+    it('fails for an unresolved § reference argument', () => {
+      const { status, stdout, stderr } = run('cli.js', [
+        'fetch-policies',
+        '§META.42',
+        '-c',
+        META_GLOB,
+      ]);
+      expect(status).toBe(1);
+      expect(stdout).toBe('');
+      expect(stderr).toContain('Error: Failed to resolve section "§META.42"');
+    });
+
     it('propagates failure exit codes', () => {
       const { status, stderr } = run('cli.js', [
         'list-sources',
@@ -88,6 +106,16 @@ describe.skipIf(!fs.existsSync(path.join(DIST, 'cli.js')))('built binaries', () 
     it('rejects unknown options and missing option values', () => {
       expect(run('hook.js', ['--bogus']).status).toBe(1);
       expect(run('hook.js', ['--config']).stderr).toContain('--config requires a path argument');
+    });
+
+    it('rejects bad digest flags with exit 1 and a message', () => {
+      const mode = run('hook.js', ['--mode', 'bogus']);
+      expect(mode.status).toBe(1);
+      expect(mode.stderr).toContain("Error: --mode must be 'digest' or 'full'");
+
+      const budget = run('hook.js', ['--digest-budget', '0']);
+      expect(budget.status).toBe(1);
+      expect(budget.stderr).toContain('Error: --digest-budget requires a positive integer');
     });
 
     it('allows on non-JSON stdin with a plain allow response', () => {

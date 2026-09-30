@@ -258,16 +258,25 @@ Use `policy-cli` for scripts, CI/CD, or non-MCP integrations.
 ### Available Subcommands
 
 ```bash
+policy-cli fetch-policies <ref>...      # Fetch policies for § refs given as arguments
 policy-cli fetch-policies <file>        # Fetch policies for § refs in a file
 policy-cli validate-references <ref>... # Validate § refs exist (exit 1 if any invalid)
 policy-cli extract-references <file>    # Extract § refs from a file as JSON
 policy-cli list-sources                 # List available policy files and prefixes
-policy-cli list-sections                # List every section as JSON (id, file, bytes, refs)
+policy-cli list-sections                # List every section as JSON (id, file, bytes, refs, important)
 policy-cli resolve-references <ref>...  # Map § refs to source files
 policy-cli check <file>                 # Lint a policy file (exit 1 on format errors)
 ```
 
 All subcommands except `extract-references` and `check` need `--config` (or `MCP_POLICY_CONFIG`).
+
+### Fetch Policies by Reference
+
+```bash
+npx -p @rcrsr/mcp-policy-server policy-cli fetch-policies §CODE.1 §API.2.3-5 --config "./policies/*.md"
+```
+
+Arguments starting with `§` are references; do not mix references and a file. Exit code 1 when a reference does not resolve.
 
 ### Extract Policies from a File
 

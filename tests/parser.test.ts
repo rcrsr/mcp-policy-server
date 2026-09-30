@@ -12,6 +12,11 @@ import {
   isParentSection,
   sortSections,
   PREFIX_ONLY_PATTERN,
+  IMPORTANT_TAG,
+  parseSectionHeading,
+  collectSectionHeadings,
+  isImportantSection,
+  extractSectionFromLines,
 } from '../src/parser';
 import { SectionNotation } from '../src/types';
 
@@ -785,6 +790,110 @@ Text after with §META.2
     it('should not match with trailing characters', () => {
       expect('§APP.'.match(PREFIX_ONLY_PATTERN)).toBeNull();
       expect('§APP '.match(PREFIX_ONLY_PATTERN)).toBeNull();
+    });
+  });
+
+  describe('section headings and importance', () => {
+    it('should strip the important tag from the title', () => {
+      const heading = parseSectionHeading(`## {§PY.7} ${IMPORTANT_TAG} Error Handling`);
+
+      expect(heading).toEqual({
+        id: '§PY.7',
+        depth: 2,
+        title: 'Error Handling',
+        tagged: true,
+        lineIndex: 0,
+      });
+    });
+
+    it('should parse a heading with no title', () => {
+      const heading = parseSectionHeading('### {§PY.7.2}');
+
+      expect(heading).toMatchObject({
+        id: '§PY.7.2',
+        depth: 3,
+        title: '',
+        tagged: false,
+      });
+    });
+
+    it('should treat a lowercase tag as untagged', () => {
+      const heading = parseSectionHeading('## {§PY.7} [important] Title');
+
+      expect(heading?.tagged).toBe(false);
+      expect(heading?.title).toBe('[important] Title');
+    });
+
+    it('should leave a tag without a separating space in the title', () => {
+      const heading = parseSectionHeading('## {§PY.7}[IMPORTANT] Title');
+
+      expect(heading?.tagged).toBe(false);
+      expect(heading?.title).toBe('[IMPORTANT] Title');
+    });
+
+    it('should return null for non-section headings', () => {
+      expect(parseSectionHeading('## Plain heading')).toBeNull();
+    });
+
+    it('should ignore headings inside fenced code blocks', () => {
+      const lines = [
+        '## {§PY.1} One',
+        '```markdown',
+        '## {§PY.2} Fake',
+        '```',
+        '### {§PY.1.1} [IMPORTANT] Nested',
+      ];
+
+      const headings = collectSectionHeadings(lines);
+
+      expect(headings.map((h) => [h.id, h.lineIndex, h.tagged])).toEqual([
+        ['§PY.1', 0, false],
+        ['§PY.1.1', 4, true],
+      ]);
+    });
+
+    it('should inherit importance three levels deep', () => {
+      const tagged = new Set<SectionNotation>(['§PY.7']);
+
+      expect(isImportantSection('§PY.7', tagged)).toBe(true);
+      expect(isImportantSection('§PY.7.2', tagged)).toBe(true);
+      expect(isImportantSection('§PY.7.2.1', tagged)).toBe(true);
+      expect(isImportantSection('§PY.8.2', tagged)).toBe(false);
+    });
+
+    it('should inherit from a mid-level tag but not from a tagged child', () => {
+      const tagged = new Set<SectionNotation>(['§PY.7.2']);
+
+      expect(isImportantSection('§PY.7.2.1', tagged)).toBe(true);
+      expect(isImportantSection('§PY.7', tagged)).toBe(false);
+    });
+
+    it('should not treat §PYX.7 as a child of §PY.7', () => {
+      const tagged = new Set<SectionNotation>(['§PY.7']);
+
+      expect(isImportantSection('§PYX.7', tagged)).toBe(false);
+      expect(isImportantSection('§PYX.7.1', tagged)).toBe(false);
+    });
+
+    it('should extract the same span for tagged and untagged headings', () => {
+      const body = ['body', '### {§PY.7.1}%s Sub', 'sub body', '## {§PY.8} Next'];
+      const plain = ['## {§PY.7} T', ...body.map((l) => l.replace('%s', ''))];
+      const tagged = [
+        '## {§PY.7} [IMPORTANT] T',
+        ...body.map((l) => l.replace('%s', ' [IMPORTANT]')),
+      ];
+
+      const wholePlain = extractSectionFromLines(plain, 'PY', '7').split('\n').slice(1);
+      const wholeTagged = extractSectionFromLines(tagged, 'PY', '7').split('\n').slice(1);
+      const subPlain = extractSectionFromLines(plain, 'PY', '7.1').split('\n').slice(1);
+      const subTagged = extractSectionFromLines(tagged, 'PY', '7.1').split('\n').slice(1);
+
+      expect(wholeTagged).toEqual(
+        wholePlain.map((l) => l.replace('### {§PY.7.1}', '### {§PY.7.1} [IMPORTANT]'))
+      );
+      expect(subTagged).toEqual(subPlain);
+      expect(extractSectionFromLines(tagged, 'PY', '7').split('\n')).toHaveLength(4);
+      expect(extractSectionFromLines(tagged, 'PY', '7.1').split('\n')).toHaveLength(2);
     });
   });
 });

@@ -9,10 +9,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig } from './config.js';
-import { buildSectionIndex } from './indexer.js';
-import { findEmbeddedReferences } from './parser.js';
-import { fetchPoliciesForReferences } from './operations.js';
-import { SectionIndex } from './types.js';
+import { buildSectionIndex, findTaggedSections } from './indexer.js';
+import {
+  collectSectionHeadings,
+  extractSectionFromLines,
+  findEmbeddedReferences,
+  isImportantSection,
+  parseSectionHeading,
+} from './parser.js';
+import { resolvePolicyInventory } from './operations.js';
+import { InventorySection, SectionIndex, SectionNotation } from './types.js';
 
 /**
  * Shape of the PreToolUse payload the hook reads from stdin
@@ -65,6 +71,10 @@ export interface HookRunOptions {
   configPath?: string;
   /** Explicit --agents-dir values, in search order */
   agentsDirs?: string[];
+  /** Injection mode: full policy text (default) or a digest plus important sections */
+  mode?: 'full' | 'digest';
+  /** Digest rendering overrides, used only in digest mode */
+  digest?: Partial<DigestOptions>;
   /** Environment description */
   env: HookEnvironment;
   /** Debug logger. When absent, config loading noise on stderr is suppressed. */
@@ -264,7 +274,9 @@ ${policies}
 </policies>`;
 }
 
-type FetchResult = { ok: true; content: string } | { ok: false; error: string };
+type FetchResult =
+  | { ok: true; content: string; inventory: InventorySection[] }
+  | { ok: false; error: string };
 
 /**
  * Fetch policies for the references found in agent content
@@ -285,20 +297,220 @@ export function fetchPoliciesForAgent(
   log(`found ${rawReferences.length} raw references`);
 
   if (rawReferences.length === 0) {
-    return { ok: true, content: '' };
+    return { ok: true, content: '', inventory: [] };
   }
 
   try {
-    const content = fetchPoliciesForReferences(rawReferences, index, baseDir, (ref, prefix) =>
+    const inventory = resolvePolicyInventory(rawReferences, index, baseDir, (ref, prefix) =>
       log(`${ref} superseded by §${prefix}`)
     );
+    const content = inventory.map((section) => section.content).join('\n');
     log(`fetched ${content.length} chars`);
-    return { ok: true, content };
+    return { ok: true, content, inventory };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     log(`fetch error: ${error}`);
     return { ok: false, error };
   }
+}
+
+/**
+ * Options controlling digest rendering
+ */
+export interface DigestOptions {
+  /** Deepest nested section level listed (§DOC.4 is level 1, §DOC.4.1 is level 2) */
+  depth: number;
+  /** Maximum characters per digest line, excluding the full-text marker */
+  lineChars: number;
+  /** Maximum total characters of digest lines before lines degrade to titles */
+  budget: number;
+  /** Host text that replaces the whole default footer statement */
+  fetchInstructions?: string;
+  /** Active config value quoted in the default footer */
+  configValue?: string;
+}
+
+/** Digest defaults: depth 2, 200 chars per line, 8000 chars total */
+export const DEFAULT_DIGEST_OPTIONS: DigestOptions = {
+  depth: 2,
+  lineChars: 200,
+  budget: 8000,
+};
+
+/**
+ * Rendered digest with counts
+ */
+export interface PolicyDigest {
+  /** Digest block, full-text block and footer */
+  text: string;
+  /** Number of digest lines */
+  summarized: number;
+  /** Number of sections rendered in full */
+  full: number;
+  /** True when lines were shortened to titles to fit the budget */
+  degraded: boolean;
+}
+
+const FULL_TEXT_MARKER = ' (full text below)';
+const HORIZONTAL_RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+
+interface DigestEntry {
+  id: SectionNotation;
+  title: string;
+  sentence: string;
+  important: boolean;
+}
+
+/** First sentence of the first paragraph of prose following a heading, up to the next § heading */
+function firstSentence(lines: string[], headingIndex: number): string {
+  const paragraph: string[] = [];
+  let inFence = false;
+  for (let i = headingIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (parseSectionHeading(line)) break;
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      if (paragraph.length > 0) break;
+      continue;
+    }
+    if (/^#+(\s|$)/.test(trimmed) || HORIZONTAL_RULE.test(line) || trimmed.startsWith('|'))
+      continue;
+    const text = trimmed
+      .replace(/^(?:>\s?)+/, '')
+      .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
+      .trim();
+    if (text) paragraph.push(text);
+  }
+  const joined = paragraph.join(' ');
+  const match = /^[\s\S]*?[.!?](?=\s|$)/.exec(joined);
+  return (match ? match[0] : joined).trim();
+}
+
+function digestLine(entry: DigestEntry, options: DigestOptions, titleOnly: boolean): string {
+  const sentence = titleOnly ? '' : entry.sentence;
+  let rest = '';
+  if (entry.title) rest += ` ${entry.title}`;
+  if (sentence) rest += `: ${sentence}`;
+  const room = Math.max(0, options.lineChars - entry.id.length);
+  if (rest.length > room) {
+    rest = room > 1 ? `${rest.slice(0, room - 1)}…` : rest.slice(0, room);
+  }
+  return `${entry.id}${rest}${entry.important ? FULL_TEXT_MARKER : ''}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Render a policy digest: one line per inventory section, then the full text
+ * of important sections, then a footer on how to fetch the rest
+ *
+ * Nested § headings inside an entry whose level is within options.depth get
+ * their own lines. Nested headings that are themselves inventory entries are
+ * not repeated. When the digest lines exceed options.budget every line falls
+ * back to its id and title.
+ *
+ * @param inventory - Resolved sections in output order
+ * @param tagged - Ids of headings tagged important
+ * @param options - Rendering options
+ * @returns Digest text and counts
+ */
+export function buildPolicyDigest(
+  inventory: InventorySection[],
+  tagged: ReadonlySet<SectionNotation>,
+  options: DigestOptions
+): PolicyDigest {
+  const inventoryIds = new Set(inventory.map((section) => section.id));
+  const entries: DigestEntry[] = [];
+  const fullBlocks: string[] = [];
+
+  for (const section of inventory) {
+    const lines = section.content.split('\n');
+    const headings = collectSectionHeadings(lines);
+    const own = headings.find((heading) => heading.id === section.id);
+    const entryImportant = isImportantSection(section.id, tagged);
+    entries.push({
+      id: section.id,
+      title: own?.title ?? '',
+      sentence: own ? firstSentence(lines, own.lineIndex) : '',
+      important: entryImportant,
+    });
+    if (entryImportant) fullBlocks.push(section.content);
+
+    for (const heading of headings) {
+      if (heading.id === section.id || inventoryIds.has(heading.id)) continue;
+      const important = isImportantSection(heading.id, tagged);
+      const level = heading.id.split('.').length - 1;
+      if (level <= options.depth || (important && !entryImportant)) {
+        entries.push({
+          id: heading.id,
+          title: heading.title,
+          sentence: firstSentence(lines, heading.lineIndex),
+          important,
+        });
+      }
+      if (important && !entryImportant) {
+        const num = heading.id.slice(heading.id.indexOf('.') + 1);
+        const extracted = extractSectionFromLines(lines, section.prefix, num);
+        if (extracted) {
+          fullBlocks.push(extracted);
+        } else {
+          // Extractor only matches ## and ### headings; slice deeper headings directly
+          const next = headings.find((other) => other.lineIndex > heading.lineIndex);
+          const end = next ? next.lineIndex : lines.length;
+          fullBlocks.push(lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, ''));
+        }
+      }
+    }
+  }
+
+  if (entries.length === 0) {
+    return { text: '', summarized: 0, full: 0, degraded: false };
+  }
+
+  let digestLines = entries.map((entry) => digestLine(entry, options, false));
+  const total = digestLines.reduce((sum, line) => sum + line.length, 0);
+  const degraded = total > options.budget;
+  if (degraded) {
+    digestLines = entries.map((entry) => digestLine(entry, options, true));
+  }
+
+  let footer =
+    options.fetchInstructions ??
+    `The policy list above is a digest. Fetch the full text of any section before relying on it: policy-cli fetch-policies${
+      options.configValue === undefined ? '' : ` --config ${shellQuote(options.configValue)}`
+    } §ID ...`;
+  if (degraded) {
+    footer += '\nDigest lines were shortened to titles to fit the budget.';
+  }
+
+  const blocks = [digestLines.join('\n')];
+  if (fullBlocks.length > 0) blocks.push(fullBlocks.join('\n'));
+  blocks.push(footer);
+
+  return {
+    text: blocks.join('\n\n'),
+    summarized: digestLines.length,
+    full: fullBlocks.length,
+    degraded,
+  };
+}
+
+/**
+ * Resolve the config value quoted in the digest footer
+ *
+ * Inline JSON is kept as-is; paths and globs are made absolute against cwd.
+ */
+function footerConfigValue(value: string | undefined): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (value.startsWith('{') && value.endsWith('}')) return value;
+  return path.resolve(process.cwd(), value);
 }
 
 /**
@@ -409,8 +621,35 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     return ALLOW_RESPONSE;
   }
 
+  log(`inventory: ${fetchResult.inventory.length} sections`);
+  log(`full text: ${fetchResult.content.length} chars`);
+
+  let injected = fetchResult.content;
+  if (options.mode === 'digest') {
+    let digest: PolicyDigest;
+    try {
+      const tagged = findTaggedSections(
+        fetchResult.inventory.map((section) => section.id),
+        index
+      );
+      digest = buildPolicyDigest(fetchResult.inventory, tagged, {
+        ...DEFAULT_DIGEST_OPTIONS,
+        ...options.digest,
+        configValue: footerConfigValue(effectiveConfigPath ?? env.policyConfigEnv),
+      });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      log(`BLOCK: ${error}`);
+      return denyResponse(`Policy resolution failed: ${error}`);
+    }
+    log(
+      `digest: ${digest.text.length} chars (${digest.summarized} summarized, ${digest.full} full, degraded=${digest.degraded})`
+    );
+    injected = digest.text;
+  }
+
   log('SUCCESS: injecting policies into prompt');
-  const newPrompt = buildInjectedPrompt(prompt, fetchResult.content);
+  const newPrompt = buildInjectedPrompt(prompt, injected);
   log(`injected prompt preview (first 600 chars):\n${newPrompt.slice(0, 600)}`);
 
   return {

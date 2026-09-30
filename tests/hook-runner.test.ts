@@ -10,6 +10,9 @@ import {
   agentHasPolicyTool,
   ALLOW_RESPONSE,
   buildInjectedPrompt,
+  buildPolicyDigest,
+  DEFAULT_DIGEST_OPTIONS,
+  DigestOptions,
   denyResponse,
   discoverPolicyConfig,
   fetchPoliciesForAgent,
@@ -19,7 +22,21 @@ import {
   resolveAgentsDirs,
   runHook,
 } from '../src/hook-runner.js';
-import { buildSectionIndex } from '../src/indexer.js';
+import { buildSectionIndex, findTaggedSections } from '../src/indexer.js';
+import { resolvePolicyInventory } from '../src/operations.js';
+import { SectionNotation } from '../src/types.js';
+
+const mocks = vi.hoisted(() => ({ failTagged: false }));
+vi.mock('../src/indexer.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/indexer.js')>();
+  return {
+    ...actual,
+    findTaggedSections: (...args: Parameters<typeof actual.findTaggedSections>) => {
+      if (mocks.failTagged) throw new Error('Failed to read policy file (simulated)');
+      return actual.findTaggedSections(...args);
+    },
+  };
+});
 
 describe('agentHasPolicyTool', () => {
   it('should return true for direct MCP policy tool', () => {
@@ -280,6 +297,7 @@ describe('hook-runner', () => {
       expect(fetchPoliciesForAgent('nothing', index, FIXTURES_DIR, log)).toEqual({
         ok: true,
         content: '',
+        inventory: [],
       });
     });
 
@@ -446,5 +464,463 @@ describe('hook-runner', () => {
       runHook(hookInput('bot'), { env, log });
       expect(errorSpy).toHaveBeenCalled();
     });
+  });
+
+  describe('runHook modes', () => {
+    const MODE_POLICY = `## {§M.1} [IMPORTANT] Core
+Core rule applies always. More words.
+
+## {§M.2} Plain
+Plain body. More words.
+{§END}
+`;
+
+    function setup(): {
+      prompt: (opts: Partial<Parameters<typeof runHook>[1]>) => string;
+    } {
+      const { agentsDir } = makeProject(tmpDir);
+      fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §M.1 and §M.2.');
+      fs.writeFileSync(path.join(tmpDir, 'policy-m.md'), MODE_POLICY);
+      return {
+        prompt: (opts) => {
+          const output = runHook(hookInput('bot', 'Original'), {
+            env,
+            log,
+            configPath: path.join(tmpDir, 'policy-m.md'),
+            ...opts,
+          });
+          if (
+            'hookSpecificOutput' in output &&
+            output.hookSpecificOutput.permissionDecision === 'allow'
+          ) {
+            return output.hookSpecificOutput.updatedInput.prompt;
+          }
+          throw new Error(`unexpected output ${JSON.stringify(output)}`);
+        },
+      };
+    }
+
+    it('gives a byte-identical prompt when no mode is set and ignores digest options in full mode', () => {
+      const { prompt } = setup();
+      const inventory = resolvePolicyInventory(
+        ['§M.1', '§M.2'],
+        buildSectionIndex({
+          files: [path.join(tmpDir, 'policy-m.md')],
+          baseDir: tmpDir,
+        }),
+        tmpDir
+      );
+      const expected = buildInjectedPrompt(
+        'Original',
+        inventory.map((section) => section.content).join('\n')
+      );
+
+      expect(prompt({})).toBe(expected);
+      expect(prompt({ mode: 'full', digest: { budget: 1, fetchInstructions: 'x' } })).toBe(
+        expected
+      );
+    });
+
+    it('gives a digest block, then the full block of important sections, then the footer', () => {
+      const { prompt } = setup();
+      const result = prompt({ mode: 'digest' });
+      const body = result.slice(
+        result.indexOf('<policies>\n\n') + '<policies>\n\n'.length,
+        result.lastIndexOf('\n\n</policies>')
+      );
+      const [digestBlock, fullBlock, footer] = body.split('\n\n');
+
+      expect(result.startsWith('Original\n\n<policies>')).toBe(true);
+      expect(digestBlock).toBe(
+        '§M.1 Core: Core rule applies always. (full text below)\n§M.2 Plain: Plain body.'
+      );
+      expect(fullBlock).toContain('## {§M.1} [IMPORTANT] Core');
+      expect(fullBlock).not.toContain('{§M.2}');
+      expect(footer).toContain('policy-cli fetch-policies');
+    });
+
+    it('quotes the absolute active config value in the default footer', () => {
+      const { prompt } = setup();
+      vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+      const result = prompt({ mode: 'digest', configPath: './policy-m.md' });
+
+      expect(result).toContain(
+        `policy-cli fetch-policies --config '${path.join(tmpDir, 'policy-m.md')}' §ID ...`
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('prints a config taken from MCP_POLICY_CONFIG explicitly in the default footer', () => {
+      const { prompt } = setup();
+      const configPath = path.join(tmpDir, 'policy-m.md');
+      vi.stubEnv('MCP_POLICY_CONFIG', configPath);
+
+      const result = prompt({
+        mode: 'digest',
+        configPath: undefined,
+        env: { ...env, policyConfigEnv: configPath },
+      });
+
+      expect(result).toContain(`--config '${configPath}'`);
+    });
+
+    it('passes inline JSON config as-is in the default footer', () => {
+      const { prompt } = setup();
+      const json = JSON.stringify({ files: [path.join(tmpDir, 'policy-m.md')] });
+
+      const result = prompt({ mode: 'digest', configPath: json });
+
+      expect(result).toContain(`--config '${json}' §ID ...`);
+      expect(result).not.toContain(path.join(process.cwd(), '{'));
+    });
+
+    it('denies in digest mode when the policy file is unreadable at digest time', () => {
+      const { agentsDir } = makeProject(tmpDir);
+      fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §M.1 and §M.2.');
+      const policyFile = path.join(tmpDir, 'policy-m.md');
+      fs.writeFileSync(policyFile, MODE_POLICY);
+      mocks.failTagged = true;
+
+      const output = runHook(hookInput('bot', 'Original'), {
+        env,
+        log,
+        configPath: policyFile,
+        mode: 'digest',
+      });
+
+      mocks.failTagged = false;
+      expect(JSON.stringify(output)).toContain('Policy resolution failed');
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+    });
+
+    it('replaces the default statement with --fetch-instructions text', () => {
+      const { prompt } = setup();
+      const result = prompt({
+        mode: 'digest',
+        digest: { fetchInstructions: 'HOST FETCH TEXT' },
+      });
+
+      expect(result).toContain('\n\nHOST FETCH TEXT\n\n</policies>');
+      expect(result).not.toContain('policy-cli fetch-policies');
+    });
+
+    it('writes the inventory, full text and digest debug lines', () => {
+      const { prompt } = setup();
+      prompt({ mode: 'digest' });
+
+      expect(logs).toContain('inventory: 2 sections');
+      expect(logs.some((l) => /^full text: \d+ chars$/.test(l))).toBe(true);
+      expect(
+        logs.some((l) => /^digest: \d+ chars \(2 summarized, 1 full, degraded=false\)$/.test(l))
+      ).toBe(true);
+    });
+  });
+});
+
+describe('buildPolicyDigest', () => {
+  const DIGEST_POLICY = `## {§D.1} [IMPORTANT] Core
+Core rule applies always. Second sentence stays out.
+
+### {§D.1.1} Child
+Child body here.
+
+## {§D.2} Plain
+See §D.3 for more. Extra words.
+
+### {§D.2.1} [IMPORTANT] Hidden gem
+Gem text is vital.
+
+## {§D.3} Third
+Third body.
+{§END}
+`;
+
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-policy-digest-'));
+    fs.writeFileSync(path.join(tmpDir, 'policy-d.md'), DIGEST_POLICY);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function digestFor(refs: string[], options: Partial<DigestOptions> = {}) {
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-d.md')],
+      baseDir: tmpDir,
+    });
+    const inventory = resolvePolicyInventory(refs, index, tmpDir);
+    const tagged = findTaggedSections(
+      inventory.map((section) => section.id),
+      index
+    );
+    const digest = buildPolicyDigest(inventory, tagged, {
+      ...DEFAULT_DIGEST_OPTIONS,
+      ...options,
+    });
+    return { inventory, digest };
+  }
+
+  /** Digest lines are the text before the first blank line */
+  function digestLines(text: string): string[] {
+    return text.split('\n\n')[0].split('\n');
+  }
+
+  it('lists every inventory id including a transitively referenced section', () => {
+    const { inventory, digest } = digestFor(['§D.2']);
+    const lineIds = digestLines(digest.text).map((line) => line.split(/[ :]/)[0]);
+
+    expect(inventory.map((s) => s.id)).toContain('§D.3');
+    for (const section of inventory) {
+      expect(lineIds).toContain(section.id);
+    }
+    expect(digest.summarized).toBe(digestLines(digest.text).length);
+  });
+
+  it('puts the full text of a child referenced alone under a tagged parent in the full block', () => {
+    const { digest } = digestFor(['§D.1.1']);
+
+    const fullBlock = digest.text.split('\n\n').slice(1).join('\n\n');
+    expect(fullBlock).toContain('### {§D.1.1} Child\nChild body here.');
+    expect(digestLines(digest.text)[0]).toBe('§D.1.1 Child: Child body here. (full text below)');
+  });
+
+  it('puts the full text of a tagged nested child in an untagged entry in the full block', () => {
+    const { digest } = digestFor(['§D.2']);
+
+    const [digestBlock] = digest.text.split('\n\n');
+    const fullBlock = digest.text.slice(digestBlock.length + 2);
+    expect(fullBlock.startsWith('### {§D.2.1} [IMPORTANT] Hidden gem\nGem text is vital.\n')).toBe(
+      true
+    );
+    expect(fullBlock).not.toContain('Extra words');
+    expect(digest.full).toBe(1);
+    expect(digestBlock).toContain('§D.2.1 Hidden gem: Gem text is vital. (full text below)');
+    expect(digestBlock).toContain('§D.2 Plain: See §D.3 for more.');
+    expect(digestBlock).not.toContain('§D.2 Plain: See §D.3 for more. (full text');
+  });
+
+  it('places the digest block before the full block and marks important lines', () => {
+    const { digest } = digestFor(['§D.1']);
+
+    const lines = digestLines(digest.text);
+    expect(lines[0]).toBe('§D.1 Core: Core rule applies always. (full text below)');
+    expect(lines[1]).toBe('§D.1.1 Child: Child body here. (full text below)');
+    expect(digest.text.indexOf('§D.1 Core')).toBeLessThan(digest.text.indexOf('## {§D.1}'));
+    expect(digest.full).toBe(1);
+  });
+
+  it('degrades to titles when over budget, keeping every id', () => {
+    const { inventory, digest } = digestFor(['§D.2'], { budget: 10 });
+
+    const lines = digestLines(digest.text);
+    for (const section of inventory) {
+      expect(lines.some((line) => line.startsWith(section.id))).toBe(true);
+    }
+    expect(lines).toContain('§D.3 Third');
+    expect(digest.text).not.toContain('Third body');
+    expect(digestLines(digest.text)).toContain('§D.2.1 Hidden gem (full text below)');
+    expect(digest.degraded).toBe(true);
+    expect(digest.text).toContain('shortened to titles');
+  });
+
+  it('respects lineChars without cutting the id', () => {
+    const { digest } = digestFor(['§D.3'], { lineChars: 12 });
+
+    const [line] = digestLines(digest.text);
+    expect(line.startsWith('§D.3 ')).toBe(true);
+    expect(line.length).toBe(12);
+    expect(digest.degraded).toBe(false);
+  });
+
+  it('never shows the tag in a digest line', () => {
+    const { digest } = digestFor(['§D.1', '§D.2']);
+
+    for (const line of digestLines(digest.text)) {
+      expect(line).not.toContain('[IMPORTANT]');
+    }
+  });
+
+  it('replaces the default statement with fetchInstructions', () => {
+    const { digest } = digestFor(['§D.3'], {
+      fetchInstructions: 'Ask the host.',
+      configValue: 'c',
+    });
+
+    expect(digest.text.endsWith('\n\nAsk the host.')).toBe(true);
+    expect(digest.text).not.toContain('policy-cli');
+  });
+
+  it('writes the default statement with the quoted config value', () => {
+    const { digest } = digestFor(['§D.3'], { configValue: "/a b/it's.json" });
+
+    expect(digest.text).toContain(
+      "policy-cli fetch-policies --config '/a b/it'\\''s.json' §ID ..."
+    );
+  });
+
+  it('appends the degraded notice to override text', () => {
+    const { digest } = digestFor(['§D.3'], {
+      budget: 1,
+      fetchInstructions: 'Ask the host.',
+    });
+
+    expect(digest.text).toContain('\n\nAsk the host.\n');
+    expect(digest.text.endsWith('shortened to titles to fit the budget.')).toBe(true);
+  });
+
+  it('throws when a file holding a requested id cannot be read', () => {
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-d.md')],
+      baseDir: tmpDir,
+    });
+    fs.rmSync(path.join(tmpDir, 'policy-d.md'));
+
+    expect(() => findTaggedSections(['§D.3' as SectionNotation], index)).toThrow('Failed to read');
+  });
+
+  it('finds tagged ids through the file of an ancestor and ignores unrelated files', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'policy-e.md'),
+      '## {§E.1} [IMPORTANT] Other\nBody.\n{§END}\n'
+    );
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-d.md'), path.join(tmpDir, 'policy-e.md')],
+      baseDir: tmpDir,
+    });
+
+    const tagged = findTaggedSections(['§D.1.1' as SectionNotation], index);
+    expect([...tagged].sort()).toEqual(['§D.1', '§D.2.1']);
+    expect(findTaggedSections([], index).size).toBe(0);
+  });
+
+  it('honours options.depth for untagged nested headings', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'policy-g.md'),
+      '## {§G.1} Top\nTop body.\n\n### {§G.1.1} Mid\nMid body.\n\n### {§G.1.2} Other\nOther body.\n{§END}\n'
+    );
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-g.md')],
+      baseDir: tmpDir,
+    });
+    const inventory = resolvePolicyInventory(['§G.1'], index, tmpDir);
+    const at = (depth: number) =>
+      digestLines(
+        buildPolicyDigest(inventory, new Set(), {
+          ...DEFAULT_DIGEST_OPTIONS,
+          depth,
+        }).text
+      );
+
+    expect(at(1)).toEqual(['§G.1 Top: Top body.']);
+    expect(at(2)).toEqual([
+      '§G.1 Top: Top body.',
+      '§G.1.1 Mid: Mid body.',
+      '§G.1.2 Other: Other body.',
+    ]);
+  });
+
+  it('lists a tagged nested heading deeper than depth so the full block is never unlisted', () => {
+    const { digest } = digestFor(['§D.2'], { depth: 1 });
+
+    const [digestBlock] = digest.text.split('\n\n');
+    expect(digestBlock).toContain('§D.2.1 Hidden gem: Gem text is vital. (full text below)');
+    expect(digest.text).toContain('### {§D.2.1} [IMPORTANT] Hidden gem\nGem text is vital.');
+  });
+
+  it('honours options.depth inside a tagged entry', () => {
+    const { digest } = digestFor(['§D.1'], { depth: 1 });
+
+    const [digestBlock] = digest.text.split('\n\n');
+    expect(digestLines(digestBlock)).toEqual([
+      '§D.1 Core: Core rule applies always. (full text below)',
+    ]);
+    expect(digest.text).toContain('### {§D.1.1} Child\nChild body here.');
+  });
+
+  it('falls back to slicing a deep nested important heading the extractor cannot find', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'policy-h.md'),
+      '## {§H.1} Top\nTop body.\n\n#### {§H.1.1} [IMPORTANT] Deep\nDeep body.\n{§END}\n'
+    );
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-h.md')],
+      baseDir: tmpDir,
+    });
+    const inventory = resolvePolicyInventory(['§H.1'], index, tmpDir);
+    const digest = buildPolicyDigest(
+      inventory,
+      new Set(['§H.1.1' as SectionNotation]),
+      DEFAULT_DIGEST_OPTIONS
+    );
+
+    expect(digest.text).not.toContain('\n\n\n');
+    expect(digest.full).toBe(1);
+    expect(digest.text).toContain('#### {§H.1.1} [IMPORTANT] Deep\nDeep body.');
+    expect(digest.text).toContain('§H.1.1 Deep: Deep body. (full text below)');
+  });
+
+  it('follows the line-format and first-sentence rules', () => {
+    const body = [
+      '## {§F.1} Multi',
+      'First line of para',
+      'continues here. Second sentence.',
+      '',
+      'Other paragraph.',
+      '',
+      '## {§F.2} Empty',
+      '',
+      '## {§F.3}',
+      'Untitled sentence! More.',
+      '',
+      '## {§F.4} Skips',
+      '### Plain heading',
+      '---',
+      '| a | b |',
+      '```',
+      'Fenced text.',
+      '```',
+      '> - quoted item ends? Yes',
+      '',
+      '## {§F.5} Stops',
+      'Until next heading',
+      '## {§F.6} Next',
+      '* Bullet.',
+      '{§END}',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, 'policy-f.md'), body);
+    const index = buildSectionIndex({
+      files: [path.join(tmpDir, 'policy-f.md')],
+      baseDir: tmpDir,
+    });
+    const inventory = resolvePolicyInventory(
+      ['§F.1', '§F.2', '§F.3', '§F.4', '§F.5', '§F.6'],
+      index,
+      tmpDir
+    );
+    const lines = digestLines(buildPolicyDigest(inventory, new Set(), DEFAULT_DIGEST_OPTIONS).text);
+
+    expect(lines).toEqual([
+      '§F.1 Multi: First line of para continues here.',
+      '§F.2 Empty',
+      '§F.3: Untitled sentence!',
+      '§F.4 Skips: quoted item ends?',
+      '§F.5 Stops: Until next heading',
+      '§F.6 Next: Bullet.',
+    ]);
+  });
+
+  it('returns empty text for an empty inventory', () => {
+    const tagged = new Set<SectionNotation>();
+    expect(buildPolicyDigest([], tagged, DEFAULT_DIGEST_OPTIONS).text).toBe('');
   });
 });

@@ -51,6 +51,21 @@ export interface ParsedSection {
 export type SectionNotation = string;
 
 /**
+ * A parsed `##`/`###` section heading line
+ *
+ * `depth` is the number of leading `#` characters, `tagged` is true when the
+ * heading carries the exact `[IMPORTANT]` tag, `lineIndex` is the zero-based
+ * line position in the source file.
+ */
+export interface SectionHeading {
+  id: SectionNotation;
+  depth: number;
+  title: string;
+  tagged: boolean;
+  lineIndex: number;
+}
+
+/**
  * Section index with fast lookup and duplicate detection
  *
  * In-memory index built at startup and refreshed on file changes.
@@ -116,6 +131,7 @@ export interface SectionDetail {
   file: string;
   byteLength: number;
   refs: SectionNotation[];
+  important: boolean;
 }
 
 /**
@@ -204,6 +220,11 @@ export interface GatheredSection {
    */
   content: string;
 }
+
+/**
+ * Gathered section paired with its resolved notation id
+ */
+export type InventorySection = GatheredSection & { id: SectionNotation };
 
 /**
  * Validation result for section uniqueness checks
