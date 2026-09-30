@@ -68,6 +68,20 @@ jobs:
             const { owner, repo } = context.repo;
             const number = context.payload.issue.number;
 
+            // Let the filing burst settle before judging a brand-new issue.
+            // `gh issue create --label --type` (and a web-form filing followed
+            // by manual triage) attaches the `area:*` label ~2s and the Issue
+            // Type up to ~17s after creation. Judging earlier flags an issue
+            // that is about to conform: it adds `needs-triage` and posts a
+            // guidance comment that is already stale when it lands, and only a
+            // later run clears the label. Wait until SETTLE_MS after creation
+            // so every run in the burst sees the final taxonomy. Runs on older
+            // issues skip the wait. `created_at` is immutable, so the payload
+            // snapshot is safe to use here.
+            const SETTLE_MS = 30_000;
+            const settle = Date.parse(context.payload.issue.created_at) + SETTLE_MS - Date.now();
+            if (settle > 0) await new Promise(r => setTimeout(r, settle));
+
             // Read every axis fresh at execution time rather than trusting
             // `context.payload.issue`, which is a snapshot frozen when the event
             // fired and can be arbitrarily stale by the time this job runs.
