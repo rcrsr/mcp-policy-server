@@ -180,7 +180,7 @@ Apply the policies above when reviewing code.
 **What happens:**
 1. Hook detects Task tool call with agent file
 2. `policy-hook` extracts all § references from agent file (§DESIGN.1, §DESIGN.2)
-3. Policies are injected into the agent prompt wrapped in `<policies>` tags
+3. Policies are placed before the task prompt, wrapped in `<policies>` tags, with the original task wrapped in `<task>` tags
 4. Subagent receives policies automatically—no explicit tool call needed
 
 **Note:** References inside code fences are ignored, allowing you to document examples without triggering extraction.

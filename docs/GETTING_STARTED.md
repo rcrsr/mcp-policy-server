@@ -92,7 +92,7 @@ Cite specific policy sections when explaining your decisions.
 1. Claude Code invokes the Task tool with the agent file
 2. PreToolUse hook triggers the policy hook
 3. Hook extracts all § references from the agent file (§EXAMPLE.1, §EXAMPLE.2)
-4. Policies are fetched and injected into the prompt wrapped in `<policies>` tags
+4. Policies are fetched and placed before the task prompt, wrapped in `<policies>` tags; the original task is wrapped in `<task>` tags
 5. Subagent receives policies automatically—no explicit tool call needed
 6. §EXAMPLE.3 (referenced from §EXAMPLE.2) is included automatically
 
@@ -167,7 +167,7 @@ Cite specific policy sections when explaining your decisions.
 1. Claude Code invokes the Task tool with the agent file
 2. PreToolUse hook triggers `policy-hook`
 3. Hook extracts all § references from the agent file (§EXAMPLE.1, §EXAMPLE.2)
-4. Policies are fetched and injected into the prompt wrapped in `<policies>` tags
+4. Policies are fetched and placed before the task prompt, wrapped in `<policies>` tags; the original task is wrapped in `<task>` tags
 5. Subagent receives policies automatically—no explicit tool call needed
 6. §EXAMPLE.3 (referenced from §EXAMPLE.2) is included automatically
 

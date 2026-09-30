@@ -258,20 +258,25 @@ export function discoverPolicyConfig(
 }
 
 /**
- * Append a policies block to a prompt
+ * Prepend a policies block to a prompt
  *
  * @param prompt - Original prompt
  * @param policies - Fetched policy content
- * @returns Prompt with trailing <policies> block
+ * @returns Policies block first, then the original prompt wrapped in <task>;
+ *   the policies form a stable prefix so they can be prompt-cached
  */
 export function buildInjectedPrompt(prompt: string, policies: string): string {
-  return `${prompt}
-
-<policies>
+  return `<policies>
 
 ${policies}
 
-</policies>`;
+</policies>
+
+<task>
+
+${prompt}
+
+</task>`;
 }
 
 type FetchResult =

@@ -269,9 +269,20 @@ describe('hook-runner', () => {
   });
 
   describe('buildInjectedPrompt and responses', () => {
-    it('wraps policies in a policies block after a blank line', () => {
-      expect(buildInjectedPrompt('Prompt', 'POLICY')).toBe(
-        'Prompt\n\n<policies>\n\nPOLICY\n\n</policies>'
+    it('puts the policies block first and wraps the prompt in a task block last', () => {
+      const result = buildInjectedPrompt('Prompt', 'POLICY');
+
+      expect(result).toBe('<policies>\n\nPOLICY\n\n</policies>\n\n<task>\n\nPrompt\n\n</task>');
+      expect(result.endsWith('<task>\n\nPrompt\n\n</task>')).toBe(true);
+    });
+
+    it('keeps the policies block byte-identical across different task prompts', () => {
+      const first = buildInjectedPrompt('First task', 'POLICY');
+      const second = buildInjectedPrompt('A completely different task', 'POLICY');
+      const end = '</policies>';
+
+      expect(first.slice(0, first.indexOf(end) + end.length)).toBe(
+        second.slice(0, second.indexOf(end) + end.length)
       );
     });
 
@@ -389,8 +400,10 @@ describe('hook-runner', () => {
         const { updatedInput } = output.hookSpecificOutput;
         expect(updatedInput.model).toBe('x');
         expect(updatedInput.subagent_type).toBe('bot');
-        expect(updatedInput.prompt.startsWith('Original\n\n<policies>\n\n## {§A.2}')).toBe(true);
-        expect(updatedInput.prompt.endsWith('\n\n</policies>')).toBe(true);
+        expect(updatedInput.prompt.startsWith('<policies>\n\n## {§A.2}')).toBe(true);
+        expect(updatedInput.prompt.endsWith('</policies>\n\n<task>\n\nOriginal\n\n</task>')).toBe(
+          true
+        );
         expect(updatedInput.prompt).not.toContain('{§A.1}');
       }
       expect(logs).toContain('SUCCESS: injecting policies into prompt');
@@ -530,7 +543,8 @@ Plain body. More words.
       );
       const [digestBlock, fullBlock, footer] = body.split('\n\n');
 
-      expect(result.startsWith('Original\n\n<policies>')).toBe(true);
+      expect(result.startsWith('<policies>\n\n')).toBe(true);
+      expect(result.endsWith('\n\n<task>\n\nOriginal\n\n</task>')).toBe(true);
       expect(digestBlock).toBe(
         '§M.1 Core: Core rule applies always. (full text below)\n§M.2 Plain: Plain body.'
       );
