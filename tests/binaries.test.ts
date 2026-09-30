@@ -113,9 +113,9 @@ describe.skipIf(!fs.existsSync(path.join(DIST, 'cli.js')))('built binaries', () 
       expect(mode.status).toBe(1);
       expect(mode.stderr).toContain("Error: --mode must be 'digest' or 'full'");
 
-      const budget = run('hook.js', ['--digest-minimal', '0']);
-      expect(budget.status).toBe(1);
-      expect(budget.stderr).toContain('Error: --digest-minimal requires a positive integer');
+      const depth = run('hook.js', ['--digest-depth', '0']);
+      expect(depth.status).toBe(1);
+      expect(depth.stderr).toContain('Error: --digest-depth requires a positive integer');
     });
 
     it('allows on non-JSON stdin with a plain allow response', () => {

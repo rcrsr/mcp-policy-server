@@ -8,7 +8,7 @@
  * Usage:
  *   policy-hook [--config <path>] [--agents-dir <path>] [--debug <file>]
  *               [--mode digest|full] [--digest-depth <n>] [--digest-line-chars <n>]
- *               [--digest-minimal <n>] [--fetch-instructions <text>]
+ *               [--digest-minimal] [--fetch-instructions <text>]
  *
  * Note: 'policy-fetch' is supported as an alias for backwards compatibility.
  * The --hook flag is accepted but ignored (hook mode is always implied).
@@ -46,8 +46,7 @@ Options:
                           of [IMPORTANT] sections, then how to fetch the rest
   --digest-depth <n>      Deepest nested section level listed (default 2, minimum 2)
   --digest-line-chars <n> Maximum characters per digest line (default 200)
-  --digest-minimal <n>    Maximum digest characters before lines degrade to titles
-                          (default 8000)
+  --digest-minimal        Digest lines show only the section id and title
   --fetch-instructions <text>
                           Replaces the default digest footer statement
                           (digest flags are ignored in full mode)
@@ -139,7 +138,7 @@ function parseArgs(args: string[]): ParsedArgs {
     } else if (arg === '--digest-line-chars') {
       digest.lineChars = requireNumber(arg, 'line-chars', args[++i]);
     } else if (arg === '--digest-minimal') {
-      digest.budget = requireNumber(arg, 'minimal', args[++i]);
+      digest.minimal = true;
     } else if (arg === '--fetch-instructions') {
       digest.fetchInstructions = requireAny(arg, args[++i]);
     } else if (!arg.startsWith('-')) {

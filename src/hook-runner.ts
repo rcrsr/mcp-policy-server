@@ -322,19 +322,19 @@ export interface DigestOptions {
   depth: number;
   /** Maximum characters per digest line, excluding the full-text marker */
   lineChars: number;
-  /** Maximum total characters of digest lines before lines degrade to titles */
-  budget: number;
+  /** Render every digest line as id and title only */
+  minimal: boolean;
   /** Host text that replaces the whole default footer statement */
   fetchInstructions?: string;
   /** Active config value quoted in the default footer */
   configValue?: string;
 }
 
-/** Digest defaults: depth 2, 200 chars per line, 8000 chars total */
+/** Digest defaults: depth 2, 200 chars per line, full lines */
 export const DEFAULT_DIGEST_OPTIONS: DigestOptions = {
   depth: 2,
   lineChars: 200,
-  budget: 8000,
+  minimal: false,
 };
 
 /**
@@ -347,8 +347,6 @@ export interface PolicyDigest {
   summarized: number;
   /** Number of sections rendered in full */
   full: number;
-  /** True when lines were shortened to titles to fit the budget */
-  degraded: boolean;
 }
 
 const FULL_TEXT_MARKER = ' (full text below)';
@@ -413,8 +411,7 @@ function shellQuote(value: string): string {
  *
  * Nested § headings inside an entry whose level is within options.depth get
  * their own lines. Nested headings that are themselves inventory entries are
- * not repeated. When the digest lines exceed options.budget every line falls
- * back to its id and title.
+ * not repeated. With options.minimal every line is its id and title only.
  *
  * @param inventory - Resolved sections in output order
  * @param tagged - Ids of headings tagged important
@@ -471,24 +468,16 @@ export function buildPolicyDigest(
   }
 
   if (entries.length === 0) {
-    return { text: '', summarized: 0, full: 0, degraded: false };
+    return { text: '', summarized: 0, full: 0 };
   }
 
-  let digestLines = entries.map((entry) => digestLine(entry, options, false));
-  const total = digestLines.reduce((sum, line) => sum + line.length, 0);
-  const degraded = total > options.budget;
-  if (degraded) {
-    digestLines = entries.map((entry) => digestLine(entry, options, true));
-  }
+  const digestLines = entries.map((entry) => digestLine(entry, options, options.minimal));
 
-  let footer =
+  const footer =
     options.fetchInstructions ??
     `The policy list above is a digest. Fetch the full text of any section before relying on it: policy-cli fetch-policies${
       options.configValue === undefined ? '' : ` --config ${shellQuote(options.configValue)}`
     } §ID ...`;
-  if (degraded) {
-    footer += '\nDigest lines were shortened to titles to fit the budget.';
-  }
 
   const blocks = [digestLines.join('\n')];
   if (fullBlocks.length > 0) blocks.push(fullBlocks.join('\n'));
@@ -498,7 +487,6 @@ export function buildPolicyDigest(
     text: blocks.join('\n\n'),
     summarized: digestLines.length,
     full: fullBlocks.length,
-    degraded,
   };
 }
 
@@ -643,7 +631,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
       return denyResponse(`Policy resolution failed: ${error}`);
     }
     log(
-      `digest: ${digest.text.length} chars (${digest.summarized} summarized, ${digest.full} full, degraded=${digest.degraded})`
+      `digest: ${digest.text.length} chars (${digest.summarized} summarized, ${digest.full} full)`
     );
     injected = digest.text;
   }

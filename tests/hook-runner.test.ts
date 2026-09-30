@@ -516,7 +516,7 @@ Plain body. More words.
       );
 
       expect(prompt({})).toBe(expected);
-      expect(prompt({ mode: 'full', digest: { budget: 1, fetchInstructions: 'x' } })).toBe(
+      expect(prompt({ mode: 'full', digest: { minimal: true, fetchInstructions: 'x' } })).toBe(
         expected
       );
     });
@@ -616,9 +616,7 @@ Plain body. More words.
 
       expect(logs).toContain('inventory: 2 sections');
       expect(logs.some((l) => /^full text: \d+ chars$/.test(l))).toBe(true);
-      expect(
-        logs.some((l) => /^digest: \d+ chars \(2 summarized, 1 full, degraded=false\)$/.test(l))
-      ).toBe(true);
+      expect(logs.some((l) => /^digest: \d+ chars \(2 summarized, 1 full\)$/.test(l))).toBe(true);
     });
   });
 });
@@ -718,8 +716,8 @@ Third body.
     expect(digest.full).toBe(1);
   });
 
-  it('degrades to titles when over budget, keeping every id', () => {
-    const { inventory, digest } = digestFor(['§D.2'], { budget: 10 });
+  it('renders titles only in minimal mode, keeping every id', () => {
+    const { inventory, digest } = digestFor(['§D.2'], { minimal: true });
 
     const lines = digestLines(digest.text);
     for (const section of inventory) {
@@ -728,8 +726,12 @@ Third body.
     expect(lines).toContain('§D.3 Third');
     expect(digest.text).not.toContain('Third body');
     expect(digestLines(digest.text)).toContain('§D.2.1 Hidden gem (full text below)');
-    expect(digest.degraded).toBe(true);
-    expect(digest.text).toContain('shortened to titles');
+  });
+
+  it('keeps sentences when minimal is off, however long the digest', () => {
+    const { digest } = digestFor(['§D.2']);
+
+    expect(digest.text).toContain('Third body');
   });
 
   it('respects lineChars without cutting the id', () => {
@@ -738,7 +740,6 @@ Third body.
     const [line] = digestLines(digest.text);
     expect(line.startsWith('§D.3 ')).toBe(true);
     expect(line.length).toBe(12);
-    expect(digest.degraded).toBe(false);
   });
 
   it('never shows the tag in a digest line', () => {
@@ -765,16 +766,6 @@ Third body.
     expect(digest.text).toContain(
       "policy-cli fetch-policies --config '/a b/it'\\''s.json' §ID ..."
     );
-  });
-
-  it('appends the degraded notice to override text', () => {
-    const { digest } = digestFor(['§D.3'], {
-      budget: 1,
-      fetchInstructions: 'Ask the host.',
-    });
-
-    expect(digest.text).toContain('\n\nAsk the host.\n');
-    expect(digest.text.endsWith('shortened to titles to fit the budget.')).toBe(true);
   });
 
   it('throws when a file holding a requested id cannot be read', () => {
