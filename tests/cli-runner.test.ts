@@ -227,6 +227,31 @@ describe('cli-runner', () => {
       expect(result.stderr).toContain('No sections found for prefix: NOPE');
     });
 
+    it('fails for a prefix-only reference whose sections are duplicated', () => {
+      const dupConfig = inlineConfig(['policy-duplicate1.md', 'policy-duplicate2.md']);
+      const result = runCli(['fetch-policies', '§DUP', '--config', dupConfig]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/^Error: /);
+      expect(result.stderr).toContain('§DUP.1');
+      expect(result.stderr).toContain('multiple files');
+    });
+
+    it('fails when an embedded reference cannot be resolved', () => {
+      fs.writeFileSync(path.join(tmpDir, 'policy-emb.md'), '## {§EMB.1} T\nSee §NOPE here.\n');
+      fs.writeFileSync(path.join(tmpDir, 'policies.json'), JSON.stringify({ files: ['./*.md'] }));
+      const result = runCli([
+        'fetch-policies',
+        '§EMB.1',
+        '--config',
+        path.join(tmpDir, 'policies.json'),
+      ]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('NOPE');
+      expect(result.stderr).toContain('§EMB.1');
+    });
+
     it('rejects mixed references and a file before loading config', () => {
       for (const args of [
         ['§META.1', 'agent.md'],
@@ -315,6 +340,18 @@ describe('cli-runner', () => {
       const parsed = JSON.parse(result.stdout);
       expect(parsed.invalid).toEqual(['§DUP.1']);
       expect(parsed.details[0]).toBe('Global validation errors:');
+    });
+
+    it('flags every duplicated section for a prefix-only reference', () => {
+      const dupConfig = inlineConfig(['policy-duplicate1.md', 'policy-duplicate2.md']);
+      const result = runCli(['validate-references', '§DUP', '--config', dupConfig]);
+      expect(result.exitCode).toBe(1);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.valid).toBe(false);
+      expect([...parsed.invalid].sort()).toEqual(['§DUP.1', '§DUP.3']);
+      expect(
+        parsed.details.some((d: string) => d.startsWith('§DUP.1: Found in multiple files'))
+      ).toBe(true);
     });
   });
 
@@ -441,6 +478,14 @@ describe('cli-runner', () => {
       const result = runCli(['resolve-references', '§META', '--config', manifest]);
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.stdout)['policy-meta.md']).toEqual(['§META.1', '§META.2']);
+    });
+
+    it('fails for a prefix-only reference whose sections are duplicated', () => {
+      const dupConfig = inlineConfig(['policy-duplicate1.md', 'policy-duplicate2.md']);
+      const result = runCli(['resolve-references', '§DUP', '--config', dupConfig]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('§DUP.1');
     });
   });
 

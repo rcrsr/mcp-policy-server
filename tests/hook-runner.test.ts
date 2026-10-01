@@ -167,7 +167,9 @@ function makePlugin(root: string, ns: string): string {
 }
 
 function hookInput(subagentType: string, prompt = 'Do the task', extra = {}): string {
-  return JSON.stringify({ tool_input: { subagent_type: subagentType, prompt, ...extra } });
+  return JSON.stringify({
+    tool_input: { subagent_type: subagentType, prompt, ...extra },
+  });
 }
 
 describe('hook-runner', () => {
@@ -355,9 +357,11 @@ describe('hook-runner', () => {
       expect(runHook(JSON.stringify({ tool_input: { prompt: 'x' } }), { env })).toEqual(
         ALLOW_RESPONSE
       );
-      expect(runHook(JSON.stringify({ tool_input: { subagent_type: 'a' } }), { env })).toEqual(
-        ALLOW_RESPONSE
-      );
+      expect(
+        runHook(JSON.stringify({ tool_input: { subagent_type: 'a' } }), {
+          env,
+        })
+      ).toEqual(ALLOW_RESPONSE);
       expect(runHook('{}', { env })).toEqual(ALLOW_RESPONSE);
     });
 
@@ -399,7 +403,10 @@ describe('hook-runner', () => {
       const { agentsDir } = makeProject(tmpDir);
       fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §A.2 please.');
 
-      const output = runHook(hookInput('bot', 'Original', { model: 'x' }), { env, log });
+      const output = runHook(hookInput('bot', 'Original', { model: 'x' }), {
+        env,
+        log,
+      });
       expect('hookSpecificOutput' in output).toBe(true);
       if (
         'hookSpecificOutput' in output &&
@@ -424,7 +431,9 @@ describe('hook-runner', () => {
       fs.writeFileSync(path.join(pluginRoot, 'agents', 'worker.md'), 'See §A.1');
       fs.writeFileSync(path.join(agentsDir, 'local.md'), 'See §A.1');
 
-      const output = runHook(hookInput('ns:worker'), { env: { ...env, pluginRoot } });
+      const output = runHook(hookInput('ns:worker'), {
+        env: { ...env, pluginRoot },
+      });
       if (
         'hookSpecificOutput' in output &&
         output.hookSpecificOutput.permissionDecision === 'allow'
@@ -472,6 +481,45 @@ describe('hook-runner', () => {
         expect(output.hookSpecificOutput.permissionDecisionReason).toContain('§A.9');
       }
       expect(logs.some((l) => l.startsWith('BLOCK:'))).toBe(true);
+    });
+
+    it('denies a prefix-only reference whose sections are duplicated', () => {
+      const { agentsDir, policiesDir } = makeProject(tmpDir);
+      for (const name of ['policy-duplicate1.md', 'policy-duplicate2.md']) {
+        fs.copyFileSync(path.join(FIXTURES_DIR, name), path.join(policiesDir, name));
+      }
+      fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Use §DUP');
+
+      const output = runHook(hookInput('bot'), { env, log });
+      if (
+        'hookSpecificOutput' in output &&
+        output.hookSpecificOutput.permissionDecision === 'deny'
+      ) {
+        expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+          'Policy resolution failed'
+        );
+        expect(output.hookSpecificOutput.permissionDecisionReason).toContain('§DUP.1');
+      } else {
+        throw new Error(`expected deny, got ${JSON.stringify(output)}`);
+      }
+      expect(logs.some((l) => l.startsWith('BLOCK:'))).toBe(true);
+    });
+
+    it('denies when an embedded reference cannot be resolved', () => {
+      const { agentsDir, policiesDir } = makeProject(tmpDir);
+      fs.writeFileSync(path.join(policiesDir, 'policy-e.md'), '## {§E.1} T\nSee §NOPE here.\n');
+      fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §E.1');
+
+      const output = runHook(hookInput('bot'), { env, log });
+      if (
+        'hookSpecificOutput' in output &&
+        output.hookSpecificOutput.permissionDecision === 'deny'
+      ) {
+        expect(output.hookSpecificOutput.permissionDecisionReason).toContain('NOPE');
+        expect(output.hookSpecificOutput.permissionDecisionReason).toContain('§E.1');
+      } else {
+        throw new Error(`expected deny, got ${JSON.stringify(output)}`);
+      }
     });
 
     it('mutes config logging when no logger is supplied', () => {
@@ -537,9 +585,12 @@ Plain body. More words.
       );
 
       expect(prompt({})).toBe(expected);
-      expect(prompt({ mode: 'full', digest: { minimal: true, fetchInstructions: 'x' } })).toBe(
-        expected
-      );
+      expect(
+        prompt({
+          mode: 'full',
+          digest: { minimal: true, fetchInstructions: 'x' },
+        })
+      ).toBe(expected);
     });
 
     it.each(['full', 'digest'] as const)(
@@ -607,7 +658,9 @@ Plain body. More words.
 
     it('passes inline JSON config as-is in the default footer', () => {
       const { prompt } = setup();
-      const json = JSON.stringify({ files: [path.join(tmpDir, 'policy-m.md')] });
+      const json = JSON.stringify({
+        files: [path.join(tmpDir, 'policy-m.md')],
+      });
 
       const result = prompt({ mode: 'digest', configPath: json });
 

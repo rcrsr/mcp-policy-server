@@ -12,7 +12,7 @@ import {
   PREFIX_ONLY_PATTERN,
   sortSections,
 } from './parser.js';
-import { gatherSectionsWithIndex, joinSectionContents } from './resolver.js';
+import { expandPrefixWithIndex, gatherSectionsWithIndex, joinSectionContents } from './resolver.js';
 import { validateFromIndex, formatDuplicateErrors } from './validator.js';
 import { ServerConfig } from './config.js';
 import { InventorySection, SectionIndex, SectionNotation } from './types.js';
@@ -26,7 +26,8 @@ const SECTION_PREFIX_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\./;
  * Expand section notations including prefix-only shorthand
  *
  * Handles three notation types:
- * - Prefix-only (§APP): Expands to all sections with that prefix from index
+ * - Prefix-only (§APP): Expands to all sections with that prefix from index,
+ *   including duplicated sections (these fail later, on resolution)
  * - Range (§APP.4.1-3): Expands via expandRange()
  * - Single section (§APP.7): Returns as-is via expandRange()
  *
@@ -48,14 +49,7 @@ export function expandSectionsWithIndex(sections: string[], index: SectionIndex)
   return sections.flatMap((s) => {
     const prefixMatch = s.match(PREFIX_ONLY_PATTERN);
     if (prefixMatch) {
-      const prefix = prefixMatch[1];
-      const matchingSections = Array.from(index.sectionMap.keys()).filter((section) =>
-        section.startsWith(`§${prefix}.`)
-      );
-      if (matchingSections.length === 0) {
-        throw new Error(`No sections found for prefix: ${prefix}`);
-      }
-      return matchingSections;
+      return expandPrefixWithIndex(prefixMatch[1], index);
     }
     return expandRange(s);
   });

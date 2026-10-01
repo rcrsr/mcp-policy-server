@@ -46,6 +46,16 @@ describe('operations', () => {
   });
 
   describe('expandSectionsWithIndex', () => {
+    it('includes duplicated sections for a prefix-only reference without throwing', () => {
+      const dupIndex = buildSectionIndex(
+        makeConfig(['policy-duplicate1.md', 'policy-duplicate2.md'])
+      );
+      const expanded = expandSectionsWithIndex(['§DUP'], dupIndex);
+      for (const id of ['§DUP.1', '§DUP.2', '§DUP.3', '§DUP.3.1', '§DUP.4']) {
+        expect(expanded).toContain(id);
+      }
+    });
+
     it('expands prefix-only notation to every indexed section', () => {
       expect(expandSectionsWithIndex(['§META'], index).sort()).toEqual([
         '§META.1',
@@ -119,6 +129,15 @@ describe('operations', () => {
   });
 
   describe('fetchPoliciesForReferences', () => {
+    it('throws for a prefix-only reference that covers duplicated sections', () => {
+      const dupIndex = buildSectionIndex(
+        makeConfig(['policy-duplicate1.md', 'policy-duplicate2.md'])
+      );
+      expect(() => fetchPoliciesForReferences(['§DUP'], dupIndex, FIXTURES_DIR)).toThrow(
+        /§DUP\.\d+ found in multiple files/
+      );
+    });
+
     it('fetches content for expanded references with recursive resolution', () => {
       const content = fetchPoliciesForReferences(['§SYS.5'], index, FIXTURES_DIR);
       expect(content).toContain('## {§SYS.5}');
@@ -193,6 +212,17 @@ describe('operations', () => {
 
     it('throws for an unknown prefix-only reference', () => {
       expect(() => validateReferences(['§NOPE'], index)).toThrow(/No sections found/);
+    });
+
+    it('lists duplicated sections as invalid for a prefix-only reference', () => {
+      const dupIndex = buildSectionIndex(
+        makeConfig(['policy-duplicate1.md', 'policy-duplicate2.md'])
+      );
+      const result = validateReferences(['§DUP'], dupIndex);
+
+      expect(result.valid).toBe(false);
+      expect([...result.invalid].sort()).toEqual(['§DUP.1', '§DUP.3']);
+      expect(result.details.join('\n')).toContain('Found in multiple files');
     });
   });
 

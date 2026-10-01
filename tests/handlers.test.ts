@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import {
   handleFetch,
   handleResolveReferences,
@@ -253,6 +254,38 @@ describe('MCP Server Integration', () => {
               indexState
             );
           }).toThrow('Invalid continuation token');
+        });
+
+        test.each(['', 'chunk:abc', 'chunk:-1', 'chunk:', 'garbage', 'chunk:1abc'])(
+          'throws descriptive error for malformed continuation token %s',
+          (token) => {
+            let message = '';
+            try {
+              handleFetch({ sections: ['§TEST.1'], continuation: token }, TEST_CONFIG, indexState);
+            } catch (error) {
+              message = error instanceof Error ? error.message : String(error);
+            }
+            expect(message).toMatch(/Invalid continuation token/);
+            expect(message).not.toContain('Cannot read properties');
+            expect(message).not.toContain('NaN');
+          }
+        );
+
+        test.each([['chunk:0'], 0, {}])('rejects non-string continuation token %j', (token) => {
+          expect(() =>
+            handleFetch({ sections: ['§TEST.1'], continuation: token }, TEST_CONFIG, indexState)
+          ).toThrow('Invalid arguments');
+        });
+
+        test('continuation chunk:0 returns the first chunk', () => {
+          const first = handleFetch({ sections: ['§TEST.1'] }, TEST_CONFIG, indexState);
+          const explicit = handleFetch(
+            { sections: ['§TEST.1'], continuation: 'chunk:0' },
+            TEST_CONFIG,
+            indexState
+          );
+
+          expect(explicit.content[0].text).toBe(first.content[0].text);
         });
 
         test('last chunk has no continuation message', () => {
@@ -841,6 +874,66 @@ ${'Additional content. '.repeat(200)}`;
 
       expect(response.content[0].text).toContain('§APP-HOOK.1');
       expect(response.content[0].text).toContain('First Hook Section');
+    });
+  });
+});
+
+describe('handleFetch prefix-only regressions', () => {
+  describe('prefix spanning multiple files', () => {
+    let dupState: IndexState;
+    let dupConfig: ServerConfig;
+    let errorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeAll(() => {
+      errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      dupConfig = {
+        files: [
+          path.resolve(__dirname, 'fixtures', 'sample-policies', 'policy-duplicate1.md'),
+          path.resolve(__dirname, 'fixtures', 'sample-policies', 'policy-duplicate2.md'),
+        ],
+        baseDir: path.resolve(__dirname, 'fixtures', 'sample-policies'),
+        maxChunkTokens: 10000,
+      };
+      dupState = initializeIndexState(dupConfig);
+    });
+
+    afterAll(() => {
+      closeIndexState(dupState);
+      errorSpy.mockRestore();
+    });
+
+    test('wraps the multiple-files error for a prefix-only request', () => {
+      expect(() => {
+        handleFetch({ sections: ['§DUP'] }, dupConfig, dupState);
+      }).toThrow(/Failed to fetch sections: .*found in multiple files/);
+    });
+  });
+
+  describe('embedded unknown prefix', () => {
+    let tempDir: string;
+    let embState: IndexState;
+    let embConfig: ServerConfig;
+
+    beforeAll(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'handlers-emb-'));
+      const embFile = path.join(tempDir, 'policy-emb.md');
+      fs.writeFileSync(embFile, '# Embedded Policy\n\n## {§EMB.2} Embedded Section\n\nSee §NOPE\n');
+      embConfig = { files: [embFile], baseDir: tempDir, maxChunkTokens: 10000 };
+      embState = initializeIndexState(embConfig);
+    });
+
+    afterAll(() => {
+      closeIndexState(embState);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    test('names the unknown prefix and the referencing section', () => {
+      expect(() => {
+        handleFetch({ sections: ['§EMB.2'] }, embConfig, embState);
+      }).toThrow('No sections found for prefix: NOPE');
+      expect(() => {
+        handleFetch({ sections: ['§EMB.2'] }, embConfig, embState);
+      }).toThrow('(referenced by §EMB.2)');
     });
   });
 });

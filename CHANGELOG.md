@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Policy placement:** `policy-hook` now places the `<policies>` block before the task prompt and wraps the task in `<task>` tags, so the policy block forms a stable prefix that can be prompt-cached. ([#30](https://github.com/rcrsr/mcp-policy-server/pull/30))
 - **Heading tag check:** `policy-cli check` now errors on any bracketed token directly after the closing brace of a section heading other than `[IMPORTANT]`. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
 
+### Fixed
+
+- **Duplicate-covering prefixes:** A prefix-only reference (e.g. `§DOC`) that covers a section defined in more than one file now fails naming the files, instead of silently omitting the section. The hook now denies (`Policy resolution failed`) in this case. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
+- **Unmatched prefixes:** An embedded prefix-only reference that matches no configured section now fails. The hook now denies (`Policy resolution failed`) for unmatched embedded prefixes. Rollout risk: policies whose prose mentions an unconfigured prefix will be denied until the prefix is configured or the reference is removed. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
+- **Continuation tokens:** `fetch_policies` now rejects malformed continuation tokens, including `""` and tokens lacking `chunk:`, with `Invalid continuation token: ...`. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
+
 ## [0.7.0] - 2026-09-08
 
 ### Added

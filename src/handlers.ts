@@ -52,11 +52,13 @@ interface ValidateReferencesArgs {
  * Type guard for FetchArgs
  */
 function isFetchArgs(args: unknown): args is FetchArgs {
+  if (typeof args !== 'object' || args === null || !('sections' in args)) {
+    return false;
+  }
+  const { sections, continuation } = args as FetchArgs;
   return (
-    typeof args === 'object' &&
-    args !== null &&
-    'sections' in args &&
-    Array.isArray((args as FetchArgs).sections)
+    Array.isArray(sections) &&
+    (continuation === undefined || continuation === null || typeof continuation === 'string')
   );
 }
 
@@ -286,8 +288,12 @@ export function handleFetch(
 
     // Determine which chunk to return
     let chunkIndex = 0;
-    if (continuation?.startsWith('chunk:')) {
-      chunkIndex = parseInt(continuation.split(':')[1], 10);
+    if (continuation !== undefined && continuation !== null) {
+      const match = /^chunk:(\d+)$/.exec(continuation);
+      if (match === null) {
+        throw new Error(`Invalid continuation token: ${continuation} (expected "chunk:<n>")`);
+      }
+      chunkIndex = parseInt(match[1], 10);
       console.error(`[DEBUG] parsed continuation: requesting chunk index ${chunkIndex}`);
     }
 
