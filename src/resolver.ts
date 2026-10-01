@@ -89,6 +89,37 @@ function resolveSectionWithContent(section: SectionNotation, index: SectionIndex
 }
 
 /**
+ * Expand a prefix-only reference to every indexed section under that prefix
+ *
+ * Returns keys of the section map followed by keys of the duplicates map that
+ * start with `§<prefix>.`, in Map order. The trailing dot keeps the prefix
+ * boundary: §APP never matches §APP-PLG.1. Duplicate keys are included so the
+ * caller reports the ambiguity when it resolves them.
+ *
+ * @param prefix - Prefix without the § sign (APP, META, etc.)
+ * @param index - Section index with prebuilt mappings
+ * @returns Section notations under the prefix
+ * @throws {Error} When no section matches the prefix
+ *
+ * @example
+ * ```typescript
+ * const index = buildSectionIndex(config);
+ * expandPrefixWithIndex('FE', index);
+ * // Returns: ['§FE.1', '§FE.2', '§FE.2.1', '§FE.3']
+ * ```
+ */
+export function expandPrefixWithIndex(prefix: string, index: SectionIndex): SectionNotation[] {
+  const start = `§${prefix}.`;
+  const matches = [...index.sectionMap.keys(), ...index.duplicates.keys()].filter((section) =>
+    section.startsWith(start)
+  );
+  if (matches.length === 0) {
+    throw new Error(`No sections found for prefix: ${prefix}`);
+  }
+  return matches;
+}
+
+/**
  * Recursively gather all sections including embedded references (index-based API)
  *
  * Core recursive resolution function that:
@@ -110,7 +141,8 @@ function resolveSectionWithContent(section: SectionNotation, index: SectionIndex
  * @param baseDir - Base directory for policy files
  * @param options - Optional settings: lenient mode skips unresolvable sections
  * @returns Map of section notation to gathered section data
- * @throws {Error} When section not found or is duplicate (unless lenient mode)
+ * @throws {Error} When section not found or is duplicate, or an embedded prefix-only
+ *   reference matches no sections (unless lenient mode)
  *
  * @example
  * ```typescript
@@ -227,14 +259,20 @@ export function gatherSectionsWithIndex(
     // Find embedded references in extracted content
     const embedded = findEmbeddedReferences(content);
     // Expand any range or prefix-only notation in embedded references
-    const expandedEmbedded = embedded.flatMap((ref) => {
+    const expandedEmbedded = embedded.flatMap((ref): string[] => {
       const prefixMatch = ref.match(PREFIX_ONLY_PATTERN);
       if (prefixMatch) {
         // Prefix-only reference: expand to all sections with that prefix
-        const prefix = prefixMatch[1];
-        return Array.from(index.sectionMap.keys()).filter((section) =>
-          section.startsWith(`§${prefix}.`)
-        );
+        try {
+          return expandPrefixWithIndex(prefixMatch[1], index);
+        } catch (error) {
+          const message = `Failed to resolve section "${ref}" (referenced by ${notation}): ${error instanceof Error ? error.message : String(error)}`;
+          if (lenient) {
+            onWarning?.(message);
+            return [];
+          }
+          throw new Error(message);
+        }
       }
       return expandRange(ref);
     });

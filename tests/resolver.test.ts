@@ -3,6 +3,8 @@
  * Tests recursive reference resolution and section gathering using prebuilt index
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as fg from 'fast-glob';
 import { ServerConfig } from '../src/config.js';
@@ -442,5 +444,67 @@ describe('resolver lenient mode', () => {
       lenient: true,
     });
     expect(content).toContain('## {§SYS.1}');
+  });
+});
+
+describe('gatherSectionsWithIndex embedded prefix-only references', () => {
+  const fixturesDir = path.resolve(__dirname, 'fixtures', 'sample-policies');
+  let tmpDir: string;
+  let index: SectionIndex;
+
+  beforeAll(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resolver-emb-'));
+    const embFile = path.join(tmpDir, 'policy-emb.md');
+    fs.writeFileSync(embFile, '## {§EMB.1} First\n\nSee §DUP\n\n## {§EMB.2} Second\n\nSee §NOPE\n');
+    index = buildSectionIndex({
+      files: [
+        embFile,
+        path.join(fixturesDir, 'policy-duplicate1.md'),
+        path.join(fixturesDir, 'policy-duplicate2.md'),
+      ],
+      baseDir: tmpDir,
+    });
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws duplicate error naming the referrer when strict', () => {
+    expect(() => gatherSectionsWithIndex(['§EMB.1'], index, tmpDir)).toThrow(
+      /\(referenced by §EMB\.1\): Section §DUP\.\d+ found in multiple files/
+    );
+  });
+
+  it('throws no-sections error naming the referrer when strict', () => {
+    expect(() => gatherSectionsWithIndex(['§EMB.2'], index, tmpDir)).toThrow(
+      /Failed to resolve section "§NOPE" \(referenced by §EMB\.2\): No sections found for prefix: NOPE/
+    );
+  });
+
+  it('warns once and keeps the referring section when lenient', () => {
+    const warnings: string[] = [];
+    const gathered = gatherSectionsWithIndex(['§EMB.2'], index, tmpDir, {
+      lenient: true,
+      onWarning: (m) => warnings.push(m),
+    });
+
+    expect(Array.from(gathered.keys())).toEqual(['§EMB.2']);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(
+      /^Failed to resolve section "§NOPE" \(referenced by §EMB\.2\): No sections found for prefix: NOPE$/
+    );
+  });
+
+  it('warns for each duplicate section when lenient', () => {
+    const warnings: string[] = [];
+    gatherSectionsWithIndex(['§EMB.1'], index, tmpDir, {
+      lenient: true,
+      onWarning: (m) => warnings.push(m),
+    });
+
+    expect(warnings.some((w) => w.includes('"§DUP.1"'))).toBe(true);
+    expect(warnings.some((w) => w.includes('"§DUP.3"'))).toBe(true);
   });
 });

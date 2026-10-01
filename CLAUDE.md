@@ -3,6 +3,7 @@
 MCP server and CLI for policy documentation via § notation. Provides automatic reference resolution, range expansion, and section validation.
 
 ## Commands
+<!-- rule-level: operational -->
 
 ```bash
 npm run build              # Compile TypeScript
@@ -15,6 +16,8 @@ npm run fix:format && npm run fix:lint   # auto-fix format and lint
 **Binaries:**
 - `policy-hook` - Claude Code PreToolUse hook (reads stdin JSON, outputs hook response)
 - `policy-cli` - CLI with subcommands: fetch-policies, validate-references, extract-references, list-sources, list-sections, resolve-references, check
+
+`engines.node` and the `.github/workflows/ci.yml` node matrix change together; read the version from `package.json`, never hardcode it.
 
 ## Architecture
 
@@ -41,6 +44,12 @@ Entry points (`index.ts`, `cli.ts`, `hook.ts`) hold process glue only. Put behav
 runner/operations modules so it stays testable in-process. Logic shared by more than one entry
 point belongs in `operations.ts`.
 
+Diagnostics go to `console.error` only; stdout is reserved for JSON-RPC frames, hook JSON, and CLI results.
+
+Relative imports use `.js`; Node builtins are `import * as fs from 'fs'` (no `node:`).
+
+Tool handlers throw `Error` (never `isError`); validate args with hand-written `is*Args` guards, no zod.
+
 ## Testing
 
 - `npm test` runs Vitest; `npm run test:coverage` enforces 80% thresholds on `src/`.
@@ -56,4 +65,5 @@ point belongs in `operations.ts`.
 - Response chunking at section boundaries (10000 token limit, MCP `fetch_policies` only)
 - File watching and lazy index rebuild apply to the MCP server only; hook and CLI rebuild the index per invocation
 - `[IMPORTANT]` after a heading's `}` marks a section and its nested subsections important; hook `--mode digest` lists every section as a one-line digest and injects full text only for important ones (full mode is the default)
+- Hook injection puts `<policies>` before `<task>` so the policy prefix stays cacheable.
 - `llms.txt` at the root mirrors the tool surface; update it when tools, subcommands, or notation change
