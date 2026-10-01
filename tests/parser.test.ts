@@ -588,9 +588,24 @@ Text after with §META.2
       expect(refs).not.toContain('§APP');
     });
 
-    it('should treat a dot followed by a non-digit as a bare prefix', () => {
-      const refs = findEmbeddedReferences('See §LEGACY.x');
-      expect(refs).toEqual(['§LEGACY']);
+    it.each([
+      ['use §PREFIX.N'],
+      ['all §API.* x'],
+      ['see §TS.md'],
+      ['See §SECTION.SUBSECTION'],
+      ['See §LEGACY.x'],
+    ])('should skip placeholder or glob form: %s', (content) => {
+      expect(findEmbeddedReferences(content)).toEqual([]);
+    });
+
+    it.each([
+      ['See §TS.5.', ['§TS.5']],
+      ['See §TS. 5', ['§TS']],
+      ['(see §TS.)', ['§TS']],
+      ['ends with §TS.', ['§TS']],
+      ['§TS.\nnext', ['§TS']],
+    ])('should handle sentence-end form: %s', (content, expected) => {
+      expect(findEmbeddedReferences(content)).toEqual(expected);
     });
   });
 
