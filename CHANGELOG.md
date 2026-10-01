@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency update:** Updated all npm dependencies to latest, including `@modelcontextprotocol/sdk` 1.31.0 and `oxfmt` 0.71.0, and bumped `github/codeql-action` to v4.38.0. ([#39](https://github.com/rcrsr/mcp-policy-server/pull/39))
+- **Dependabot scope:** Dependabot now opens PRs only for security advisories, grouped into one PR per run. Routine version bumps are off. ([#39](https://github.com/rcrsr/mcp-policy-server/pull/39))
+
+### Security
+
+- **Transitive advisories:** Resolved advisories in `fast-uri` (3.1.8), `ip-address` (10.7.2), and `brace-expansion` (5.0.12). `npm audit` reports 0 vulnerabilities. ([#39](https://github.com/rcrsr/mcp-policy-server/pull/39))
+
 ## [0.8.0] - 2026-09-30
 
 ### Added
