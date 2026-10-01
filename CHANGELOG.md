@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Policy placement:** `policy-hook` now places the `<policies>` block before the task prompt and wraps the task in `<task>` tags, so the policy block forms a stable prefix that can be prompt-cached. ([#30](https://github.com/rcrsr/mcp-policy-server/pull/30))
 - **Heading tag check:** `policy-cli check` now errors on any bracketed token directly after the closing brace of a section heading other than `[IMPORTANT]`. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
+- **Prefix failure documentation:** Documentation explains when prefix-only references fail (unmatched or duplicate-covering, including embedded ones in fetched text), hook denial cases, the backtick escape hatch, and continuation token rules. ([#35](https://github.com/rcrsr/mcp-policy-server/pull/35))
 
 ### Fixed
 

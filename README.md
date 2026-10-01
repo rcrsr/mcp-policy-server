@@ -195,6 +195,8 @@ Required: §DESIGN, §API
 
 This expands `§DESIGN` to all `§DESIGN.*` sections and `§API` to all `§API.*` sections.
 
+A prefix-only reference fails when the prefix matches no section, or when any section it covers is defined in more than one file. This applies to prefixes written in an agent file and to prefixes embedded in fetched policy text. Policy prose that mentions an unconfigured prefix (for example `§LEGACY`) fails resolution until you configure the prefix, remove the reference, or wrap it in backticks so it is not extracted.
+
 ---
 
 ## Method 3: MCP Server
@@ -319,7 +321,7 @@ These tools are available when using [Method 3: MCP Server](#method-3-mcp-server
 {"sections": ["§PREFIX.1", "§PREFIX.2"]}
 ```
 
-Responses larger than roughly 10000 tokens are split at section boundaries. The response then ends with a continuation notice; call `fetch_policies` again with the same `sections` and the given `continuation` token.
+Responses larger than roughly 10000 tokens are split at section boundaries. The response then ends with a continuation notice; call `fetch_policies` again with the same `sections` and the given `continuation` token. A string token that is not `chunk:<n>` (for example `""` or `"page:2"`), or a chunk index past the last chunk, fails with `Invalid continuation token`. A non-string value (array, number, or object) fails with `Invalid arguments`.
 
 ## Use Cases
 

@@ -143,6 +143,17 @@ Follow all §TS and §PY policies, plus §BASIC.1-8.
 
 Combines prefix-only (`§TS`, `§PY`) with range notation (`§BASIC.1-8`). When an agent file names both `§TS` and `§TS.2`, the specific reference is dropped because the prefix-only reference already covers it.
 
+### Failures
+
+A prefix-only reference fails when the prefix matches no section, or when any section it covers is defined in more than one file. This applies to prefixes written in an agent file and to prefixes embedded in fetched policy text.
+
+| Cause | Error |
+|-------|-------|
+| No section uses the prefix | `No sections found for prefix: PREFIX` |
+| A covered section is defined in more than one file | `Section §PREFIX.N found in multiple files:` followed by the file list |
+
+An embedded prefix failure names the section that contains it: `Failed to resolve section "§LEGACY" (referenced by §DOC.3)`. The hook denies the tool call in both cases. Check that every prefix your policies mention is configured: run `policy-cli list-sources` to see the available prefixes. To mention a prefix without fetching it, wrap it in backticks.
+
 ### Special Case: §END
 
 The `§END` marker is excluded from prefix expansion. It's a special end-of-section marker, not a policy section.
@@ -301,6 +312,7 @@ The `mcp__policy-server__validate_references` tool and `policy-cli validate-refe
 | Lowercase prefix | `§prefix.1` | `§PREFIX.1` |
 | Invalid characters | `§PREFIX.1a` | `§PREFIX.1` |
 | Unknown prefix | `§UNKNOWN.1` | `§PREFIX.1` |
+| Unknown prefix-only reference | `§UNKNOWN` | `§PREFIX` |
 
 Lowercase or malformed text is not recognized as a reference at all; the extractor skips it silently. An unknown prefix or number is extracted and then reported as `Section not found in policy files`.
 

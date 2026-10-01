@@ -151,7 +151,7 @@ Directories are searched in order. The first matching agent file is used.
 |-----------|----------|
 | Policies resolved | `hookSpecificOutput.updatedInput.prompt` with policies placed before the task; `permissionDecision: "allow"` |
 | Agent file not found, no § references, agent declares `mcp__policy-server__fetch_policies` in `tools`, invalid stdin, or config error | `{"permissionDecision": "allow"}` (tool call proceeds unchanged) |
-| A referenced section is missing or defined in more than one file | `permissionDecision: "deny"` with `permissionDecisionReason` naming the failed reference |
+| A referenced section is missing or defined in more than one file, or a prefix-only reference (in the agent file or embedded in a fetched policy) matches no section or covers a duplicated one | `permissionDecision: "deny"` with `permissionDecisionReason` naming the failed reference |
 
 The deny response is deliberate: a subagent that expects a policy should not run without it. Fix the reference or the policy file, then retry.
 
@@ -178,7 +178,7 @@ Your agent instructions here...
 **Key points:**
 - § references can appear anywhere—no special format required
 - References inside code fences are ignored (for documenting examples)
-- Prefix-only references like `§API` expand to all `§API.*` sections
+- Prefix-only references like `§API` expand to all `§API.*` sections. They fail when no section matches the prefix or a covered section is duplicated
 
 ---
 
