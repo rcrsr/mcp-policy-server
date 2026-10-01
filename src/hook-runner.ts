@@ -133,6 +133,98 @@ export function agentHasPolicyTool(content: string): boolean {
   return toolsMatch[1].split(/[\s,[\]"']+/).some((token) => POLICY_TOOL_PATTERN.test(token));
 }
 
+/** Injection modes an agent can select in its `policy-mode` frontmatter key */
+type AgentPolicyMode = 'full' | 'digest' | 'digest-minimal';
+
+const AGENT_POLICY_MODES: readonly AgentPolicyMode[] = ['full', 'digest', 'digest-minimal'];
+
+/** Frontmatter text between the leading and closing `---`, or null when absent */
+function agentFrontmatter(content: string): string | null {
+  if (!content.startsWith('---')) {
+    return null;
+  }
+  const endIndex = content.indexOf('---', 3);
+  return endIndex === -1 ? null : content.slice(3, endIndex);
+}
+
+/**
+ * Read the `policy-mode` key from agent frontmatter
+ *
+ * @param content - Agent file content
+ * @returns `{ ok: true, mode }` (mode undefined when the key is absent), or
+ *   `{ ok: false, value }` carrying the unrecognised value
+ * @example
+ * ```typescript
+ * readAgentPolicyMode('---\npolicy-mode: digest\n---\n'); // { ok: true, mode: 'digest' }
+ * ```
+ */
+function readAgentPolicyMode(
+  content: string
+): { ok: true; mode?: AgentPolicyMode } | { ok: false; value: string } {
+  const match = agentFrontmatter(content)?.match(/^policy-mode:[ \t]*(.*)$/m);
+  if (!match) {
+    return { ok: true };
+  }
+  const value = match[1].trim().replace(/^["']|["']$/g, '');
+  const mode = AGENT_POLICY_MODES.find((candidate) => candidate === value);
+  return mode ? { ok: true, mode } : { ok: false, value };
+}
+
+/**
+ * Check whether agent frontmatter declares `tools:` without a Bash token
+ *
+ * Reads the inline value plus any block-list continuation lines (indented or
+ * `-` prefixed). A scoped entry such as `Bash(git:*)` counts as Bash.
+ *
+ * @param content - Agent file content
+ * @returns True only when a tools key exists and none of its entries is Bash
+ */
+function agentToolsLackBash(content: string): boolean {
+  const toolsMatch = agentFrontmatter(content)?.match(
+    /^tools:([^\r\n]*(?:\r?\n(?:[ \t]+|-)[^\r\n]*)*)/m
+  );
+  // An empty `tools:` is treated like an absent key: no guard.
+  if (!toolsMatch || toolsMatch[1].trim() === '') {
+    return false;
+  }
+  return !/(?<![\w-])Bash(?![\w-])/.test(toolsMatch[1]);
+}
+
+/** Injection mode with where it came from */
+interface ResolvedMode {
+  mode: 'full' | 'digest';
+  minimal: boolean;
+  source: 'frontmatter' | 'flag' | 'default';
+}
+
+/**
+ * Resolve the injection mode: agent frontmatter, then run options, then full
+ *
+ * `digest` forces minimal off and `digest-minimal` forces it on; other digest
+ * options always come from options.digest.
+ *
+ * @param agentMode - Value of the agent's `policy-mode` key, if any
+ * @param options - Hook run options
+ * @returns Mode, minimal flag, and source
+ */
+function resolveInjectionMode(
+  agentMode: AgentPolicyMode | undefined,
+  options: Pick<HookRunOptions, 'mode' | 'digest'>
+): ResolvedMode {
+  if (agentMode === 'full') return { mode: 'full', minimal: false, source: 'frontmatter' };
+  if (agentMode === 'digest') return { mode: 'digest', minimal: false, source: 'frontmatter' };
+  if (agentMode === 'digest-minimal')
+    return { mode: 'digest', minimal: true, source: 'frontmatter' };
+  if (options.mode !== undefined) {
+    return {
+      mode: options.mode,
+      minimal: options.digest?.minimal ?? false,
+      source: 'flag',
+    };
+  }
+  return { mode: 'full', minimal: false, source: 'default' };
+}
+
 /**
  * Resolve the agent directories to search
  *
@@ -409,20 +501,6 @@ function digestLine(entry: DigestEntry, options: DigestOptions, titleOnly: boole
   return `${entry.id}${rest}${entry.important ? FULL_TEXT_MARKER : ''}`;
 }
 
-/** True when a proper ancestor of id (below the entry itself) is important, so its block already covers id */
-function isInheritedImportant(
-  id: SectionNotation,
-  tagged: ReadonlySet<SectionNotation>,
-  entryId: SectionNotation
-): boolean {
-  let parent = id.substring(0, id.lastIndexOf('.'));
-  while (parent.includes('.') && parent !== entryId) {
-    if (isImportantSection(parent as SectionNotation, tagged)) return true;
-    parent = parent.substring(0, parent.lastIndexOf('.'));
-  }
-  return false;
-}
-
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -461,6 +539,7 @@ export function buildPolicyDigest(
       important: entryImportant,
     });
     if (entryImportant) fullBlocks.push(section.content);
+    const sectionBlocks: string[] = [];
 
     for (const heading of headings) {
       if (heading.id === section.id || inventoryIds.has(heading.id)) continue;
@@ -474,20 +553,24 @@ export function buildPolicyDigest(
           important,
         });
       }
-      if (important && !entryImportant && !isInheritedImportant(heading.id, tagged, section.id)) {
+      if (important && !entryImportant) {
         const num = heading.id.slice(heading.id.indexOf('.') + 1);
         const headingPrefix = heading.id.slice(1, heading.id.indexOf('.'));
-        const extracted = extractSectionFromLines(lines, headingPrefix, num);
-        if (extracted) {
-          fullBlocks.push(extracted);
-        } else {
+        let block = extractSectionFromLines(lines, headingPrefix, num);
+        if (!block) {
           // Extractor only matches ## and ### headings; slice deeper headings directly
           // Stop at the first heading that is not a descendant of this one
           const next = headings.find(
             (other) => other.lineIndex > heading.lineIndex && !other.id.startsWith(`${heading.id}.`)
           );
           const end = next ? next.lineIndex : lines.length;
-          fullBlocks.push(lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, ''));
+          block = lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, '');
+        }
+        // A same-level descendant is not covered by its ancestor's block, so
+        // containment (not id ancestry) decides whether the text is already delivered
+        if (!sectionBlocks.some((existing) => existing.includes(block))) {
+          sectionBlocks.push(block);
+          fullBlocks.push(block);
         }
       }
     }
@@ -600,6 +683,24 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     return ALLOW_RESPONSE;
   }
 
+  const agentMode = readAgentPolicyMode(agentContent);
+  if (!agentMode.ok) {
+    log(`BLOCK: invalid policy-mode "${agentMode.value}"`);
+    return denyResponse(
+      `Invalid policy-mode "${agentMode.value}" in ${agentPath}: expected ${AGENT_POLICY_MODES.join(', ')}`
+    );
+  }
+  let resolved = resolveInjectionMode(agentMode.mode, options);
+  if (
+    resolved.source === 'frontmatter' &&
+    resolved.mode === 'digest' &&
+    agentToolsLackBash(agentContent)
+  ) {
+    log('policy-mode digest ignored: agent tools declare no Bash, falling back to full');
+    resolved = { mode: 'full', minimal: false, source: 'frontmatter' };
+  }
+  log(`mode: ${resolved.mode}${resolved.minimal ? ' (minimal)' : ''}, source: ${resolved.source}`);
+
   const effectiveConfigPath = discoverPolicyConfig(options.configPath, env, log);
 
   let config;
@@ -639,7 +740,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   log(`full text: ${fetchResult.content.length} chars`);
 
   let injected = fetchResult.content;
-  if (options.mode === 'digest') {
+  if (resolved.mode === 'digest') {
     let digest: PolicyDigest;
     try {
       const tagged = findTaggedSections(
@@ -649,6 +750,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
       digest = buildPolicyDigest(fetchResult.inventory, tagged, {
         ...DEFAULT_DIGEST_OPTIONS,
         ...options.digest,
+        minimal: resolved.minimal,
         configValue: footerConfigValue(effectiveConfigPath ?? env.policyConfigEnv),
       });
     } catch (e) {
