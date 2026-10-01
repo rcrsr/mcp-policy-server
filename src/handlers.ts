@@ -52,11 +52,13 @@ interface ValidateReferencesArgs {
  * Type guard for FetchArgs
  */
 function isFetchArgs(args: unknown): args is FetchArgs {
+  if (typeof args !== 'object' || args === null || !('sections' in args)) {
+    return false;
+  }
+  const { sections, continuation } = args as FetchArgs;
   return (
-    typeof args === 'object' &&
-    args !== null &&
-    'sections' in args &&
-    Array.isArray((args as FetchArgs).sections)
+    Array.isArray(sections) &&
+    (continuation === undefined || continuation === null || typeof continuation === 'string')
   );
 }
 

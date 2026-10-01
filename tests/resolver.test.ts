@@ -14,6 +14,7 @@ import {
   gatherSectionsWithIndex,
   fetchSectionsWithIndex,
   resolveSectionLocationsWithIndex,
+  expandPrefixWithIndex,
 } from '../src/resolver.js';
 import { SectionIndex, SectionNotation } from '../src/types.js';
 
@@ -506,5 +507,78 @@ describe('gatherSectionsWithIndex embedded prefix-only references', () => {
 
     expect(warnings.some((w) => w.includes('"§DUP.1"'))).toBe(true);
     expect(warnings.some((w) => w.includes('"§DUP.3"'))).toBe(true);
+  });
+});
+
+describe('nested duplicate under a unique parent', () => {
+  let tmpDir: string;
+  let index: SectionIndex;
+
+  beforeAll(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resolver-nested-'));
+    const first = path.join(tmpDir, 'nx-a.md');
+    const second = path.join(tmpDir, 'nx-b.md');
+    fs.writeFileSync(first, '## {§NX.1} One\n\nBody\n\n### {§NX.1.1} Nested\n\nA\n');
+    fs.writeFileSync(second, '### {§NX.1.1} Nested again\n\nB\n');
+    index = buildSectionIndex({ files: [first, second], baseDir: tmpDir });
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reports the duplicate when the parent prefix is expanded', () => {
+    const sections = expandPrefixWithIndex('NX', index);
+    expect(() => gatherSectionsWithIndex(sections, index, tmpDir)).toThrow(
+      /§NX\.1\.1.*found in multiple files/
+    );
+  });
+
+  it('warns about the duplicate when lenient', () => {
+    const warnings: string[] = [];
+    gatherSectionsWithIndex(expandPrefixWithIndex('NX', index), index, tmpDir, {
+      lenient: true,
+      onWarning: (m) => warnings.push(m),
+    });
+    expect(warnings.some((w) => w.includes('"§NX.1.1"'))).toBe(true);
+  });
+});
+
+describe('expandPrefixWithIndex', () => {
+  let tmpDir: string;
+  let index: SectionIndex;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resolver-prefix-'));
+    const files = [
+      ['px-a.md', '## {§PX.1} One\n\nA\n\n## {§PX.2} Two\n\nB\n'],
+      ['px-b.md', '## {§PX.2} Two again\n\nC\n'],
+      ['px-plg.md', '## {§PX-PLG.1} Plugin\n\nD\n'],
+    ].map(([name, body]) => {
+      const file = path.join(tmpDir, name);
+      fs.writeFileSync(file, body);
+      return file;
+    });
+    index = buildSectionIndex({ files, baseDir: tmpDir });
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('does not match a longer prefix sharing the same leading letters', () => {
+    expect(expandPrefixWithIndex('PX', index)).not.toContain('§PX-PLG.1');
+    expect(expandPrefixWithIndex('PX-PLG', index)).toEqual(['§PX-PLG.1']);
+  });
+
+  it('includes duplicate section keys', () => {
+    expect(expandPrefixWithIndex('PX', index)).toEqual(expect.arrayContaining(['§PX.1', '§PX.2']));
+  });
+
+  it('throws when no section matches the prefix', () => {
+    expect(() => expandPrefixWithIndex('NOPE', index)).toThrow(
+      'No sections found for prefix: NOPE'
+    );
   });
 });

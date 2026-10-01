@@ -200,7 +200,8 @@ export function gatherSectionsWithIndex(
         break;
       }
     }
-    if (hasParent) continue;
+    // A duplicated section is never skipped: it must reach resolveSection so the ambiguity is reported
+    if (hasParent && !index.duplicates.has(notation as SectionNotation)) continue;
 
     // Check if this section is a parent of any already-processed sections
     const childrenToRemove: string[] = [];

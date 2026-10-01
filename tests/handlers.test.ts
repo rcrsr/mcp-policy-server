@@ -256,7 +256,7 @@ describe('MCP Server Integration', () => {
           }).toThrow('Invalid continuation token');
         });
 
-        test.each(['chunk:abc', 'chunk:-1', 'chunk:', 'garbage', 'chunk:1abc'])(
+        test.each(['', 'chunk:abc', 'chunk:-1', 'chunk:', 'garbage', 'chunk:1abc'])(
           'throws descriptive error for malformed continuation token %s',
           (token) => {
             let message = '';
@@ -270,6 +270,12 @@ describe('MCP Server Integration', () => {
             expect(message).not.toContain('NaN');
           }
         );
+
+        test.each([['chunk:0'], 0, {}])('rejects non-string continuation token %j', (token) => {
+          expect(() =>
+            handleFetch({ sections: ['§TEST.1'], continuation: token }, TEST_CONFIG, indexState)
+          ).toThrow('Invalid arguments');
+        });
 
         test('continuation chunk:0 returns the first chunk', () => {
           const first = handleFetch({ sections: ['§TEST.1'] }, TEST_CONFIG, indexState);
