@@ -239,6 +239,8 @@ describe('parser', () => {
       expect(extractSectionFromLines(lines, 'A.B', '1')).toBe('## {§A.B.1}\nliteral');
       expect(extractSectionFromLines(lines, '(', '1')).toBe('');
       expect(extractSectionFromLines(lines, 'A', '.*')).toBe('');
+      expect(extractSectionFromLines(['## {§A.11}', 'x'], 'A', '1+')).toBe('');
+      expect(extractSectionFromLines(['## {§A.1}', 'x'], 'A', '(1)')).toBe('');
     });
 
     describe('whole section extraction', () => {

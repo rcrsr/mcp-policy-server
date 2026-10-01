@@ -100,6 +100,9 @@ export function denyResponse(reason: string): HookOutput {
   };
 }
 
+/** Anchored per-token match for the fetch_policies MCP tool name */
+const POLICY_TOOL_PATTERN = /^mcp__(?:\w+_)?policy-server__fetch_policies$/;
+
 /**
  * Check if agent file has MCP policy tool in frontmatter
  * Agents with this tool should fetch policies themselves
@@ -127,7 +130,7 @@ export function agentHasPolicyTool(content: string): boolean {
     return false;
   }
 
-  return /mcp__(?:\w+_)?policy-server__fetch_policies/.test(toolsMatch[1]);
+  return toolsMatch[1].split(/[\s,[\]"']+/).some((token) => POLICY_TOOL_PATTERN.test(token));
 }
 
 /**

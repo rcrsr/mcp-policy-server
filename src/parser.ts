@@ -202,6 +202,7 @@ export function extractSection(filePath: string, prefix: string, sectionNum: str
  * Same extraction rules as extractSection, but operates on lines already
  * read into memory. Callers that extract several sections from one file
  * (e.g. buildSectionDetails) use this to read and split the file once.
+ * prefix and sectionNum are matched literally (regex metacharacters escaped).
  *
  * @param lines - File content split on newlines
  * @param prefix - Policy prefix (APP, META, SYS, USER, etc.)
