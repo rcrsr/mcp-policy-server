@@ -234,6 +234,15 @@ describe('parser', () => {
   });
 
   describe('extractSection', () => {
+    test('treats regex metacharacters in prefix and section as literals', () => {
+      const lines = ['## {§AXB.1}', 'wrong', '## {§A.B.1}', 'literal'];
+      expect(extractSectionFromLines(lines, 'A.B', '1')).toBe('## {§A.B.1}\nliteral');
+      expect(extractSectionFromLines(lines, '(', '1')).toBe('');
+      expect(extractSectionFromLines(lines, 'A', '.*')).toBe('');
+      expect(extractSectionFromLines(['## {§A.11}', 'x'], 'A', '1+')).toBe('');
+      expect(extractSectionFromLines(['## {§A.1}', 'x'], 'A', '(1)')).toBe('');
+    });
+
     describe('whole section extraction', () => {
       it('should extract whole section from start to next section', () => {
         const content = extractSection(TEST_POLICY, 'TEST', '1');

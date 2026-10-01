@@ -73,11 +73,16 @@ describe('Index Optimization', () => {
 
     test('detects file changes via size even with same mtime', () => {
       const initial = buildSectionIndex(config);
-      const originalMtime = fs.statSync(testFile1).mtime;
 
       // Modify file and restore original mtime (simulate mtime collision)
-      fs.appendFileSync(testFile1, '\n## {§TEST.3}\nNew section');
-      fs.utimesSync(testFile1, originalMtime, originalMtime);
+      const fd = fs.openSync(testFile1, 'a');
+      try {
+        const { atime, mtime } = fs.fstatSync(fd);
+        fs.appendFileSync(fd, '\n## {§TEST.3}\nNew section');
+        fs.futimesSync(fd, atime, mtime);
+      } finally {
+        fs.closeSync(fd);
+      }
 
       // Size check should detect change
       const rebuild = buildSectionIndex(config, initial);

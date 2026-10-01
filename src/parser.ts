@@ -18,6 +18,16 @@ const WHOLE_SECTION_RANGE_PATTERN = /^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)\.(\d+
 const SECTION_MARKER_PATTERN = /^##?#? \{§/;
 
 /**
+ * Escape regex metacharacters so input matches literally
+ *
+ * @param value - Raw string, possibly user-supplied
+ * @returns String safe to embed in a RegExp source
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Pattern for prefix-only notation (§PREFIX without section number)
  * Matches: §APP, §META, §SYS, §APP-HOOK, §CODE2, etc.
  * Used to fetch all sections from a document
@@ -192,6 +202,7 @@ export function extractSection(filePath: string, prefix: string, sectionNum: str
  * Same extraction rules as extractSection, but operates on lines already
  * read into memory. Callers that extract several sections from one file
  * (e.g. buildSectionDetails) use this to read and split the file once.
+ * prefix and sectionNum are matched literally (regex metacharacters escaped).
  *
  * @param lines - File content split on newlines
  * @param prefix - Policy prefix (APP, META, SYS, USER, etc.)
@@ -204,16 +215,18 @@ export function extractSectionFromLines(
   sectionNum: string
 ): string {
   const isSubsection = sectionNum.includes('.');
+  const safePrefix = escapeRegExp(prefix);
+  const safeSectionNum = escapeRegExp(sectionNum);
 
   if (isSubsection) {
     // Subsection (§APP.4.1): stop at any next § marker
-    const startPattern = new RegExp(`^###? \\{§${prefix}\\.${sectionNum.replace(/\./g, '\\.')}\\}`);
+    const startPattern = new RegExp(`^###? \\{§${safePrefix}\\.${safeSectionNum}\\}`);
     return extractRange(lines, startPattern, SECTION_MARKER_PATTERN);
   }
 
   // Whole section (§APP.4): stop at next whole section, {§END}, or EOF
-  const startPattern = new RegExp(`^## \\{§${prefix}\\.${sectionNum}\\}`);
-  const stopPattern = new RegExp(`^## \\{§${prefix}\\.[0-9]|^\\{§END\\}`);
+  const startPattern = new RegExp(`^## \\{§${safePrefix}\\.${safeSectionNum}\\}`);
+  const stopPattern = new RegExp(`^## \\{§${safePrefix}\\.[0-9]|^\\{§END\\}`);
   return extractRange(lines, startPattern, stopPattern);
 }
 

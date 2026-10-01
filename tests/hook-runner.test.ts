@@ -107,6 +107,37 @@ tools: mcp__policy-server__fetch_policies
     expect(agentHasPolicyTool(content)).toBe(false);
   });
 
+  it('should reject adversarial non-matching tool lines without catastrophic backtracking', () => {
+    const exponential = `---
+tools: mcp__${'a_'.repeat(40)}
+---`;
+    const repeatedPrefix = `---
+tools: ${'mcp__a'.repeat(50000)}
+---`;
+    const start = Date.now();
+    expect(agentHasPolicyTool(exponential)).toBe(false);
+    expect(agentHasPolicyTool(repeatedPrefix)).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('should detect policy tool in a bracketed list', () => {
+    const content = `---
+tools: [Read, mcp__policy-server__fetch_policies]
+---`;
+    expect(agentHasPolicyTool(content)).toBe(true);
+  });
+
+  it('should detect policy tool in quoted lists', () => {
+    const double = `---
+tools: ["mcp__policy-server__fetch_policies"]
+---`;
+    const single = `---
+tools: 'mcp__policy-server__fetch_policies'
+---`;
+    expect(agentHasPolicyTool(double)).toBe(true);
+    expect(agentHasPolicyTool(single)).toBe(true);
+  });
+
   it('should handle policy tool as only tool', () => {
     const content = `---
 tools: mcp__policy-server__fetch_policies
