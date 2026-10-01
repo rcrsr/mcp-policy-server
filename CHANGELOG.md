@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-01
+
 ### Added
 
 - **`policy-mode` agent frontmatter:** An agent file can set `policy-mode: full|digest|digest-minimal` to choose its own injection mode. Precedence is frontmatter, then `--mode`/`--digest-minimal`, then `full`. An invalid value denies with a reason naming the agent file and value. A digest mode from frontmatter falls back to full when the agent declares `tools:` without `Bash`. `--debug` logs the resolved mode and its source. ([#46](https://github.com/rcrsr/mcp-policy-server/pull/46))
@@ -258,6 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of MCP Policy Server
 
+[0.8.3]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.7.0...v0.8.0
