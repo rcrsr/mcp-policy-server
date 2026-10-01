@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-30
+
 ### Added
 
 - **Digest mode for policy-hook:** `--mode digest` injects one `§ID Title: first sentence` line per section, then the full text of `[IMPORTANT]` sections, then a footer on how to fetch the rest. Options: `--digest-depth`, `--digest-line-chars`, `--digest-minimal` (title-only lines), and `--fetch-instructions` (replaces the default footer). Full mode stays the default and is unchanged. ([#29](https://github.com/rcrsr/mcp-policy-server/pull/29))
@@ -230,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of MCP Policy Server
 
+[0.8.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.2...v0.6.3
