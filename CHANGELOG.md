@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-01
+
 ### Security
 
 - **Regex injection:** Section extraction escapes the prefix and section number before building a regex, so metacharacters match literally. ([#41](https://github.com/rcrsr/mcp-policy-server/pull/41))
@@ -248,6 +250,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of MCP Policy Server
 
+[0.8.2]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.4...v0.7.0
