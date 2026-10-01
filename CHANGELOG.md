@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Duplicate-covering prefixes:** A prefix-only reference (e.g. `§DOC`) that covers a section defined in more than one file now fails naming the files, instead of silently omitting the section. The hook now denies (`Policy resolution failed`) in this case. ([#31](https://github.com/rcrsr/mcp-policy-server/issues/31))
-- **Unmatched prefixes:** A prefix-only reference that matches no configured section now fails for both requested and embedded references. The hook now denies (`Policy resolution failed`) for unmatched embedded prefixes. Rollout risk: policies whose prose mentions an unconfigured prefix will be denied until the prefix is configured or the reference is removed. ([#32](https://github.com/rcrsr/mcp-policy-server/issues/32), [#31](https://github.com/rcrsr/mcp-policy-server/issues/31))
-- **Continuation tokens:** `fetch_policies` now rejects malformed continuation tokens, including `""` and tokens lacking `chunk:`, with `Invalid continuation token: ...`. ([#33](https://github.com/rcrsr/mcp-policy-server/issues/33))
+- **Duplicate-covering prefixes:** A prefix-only reference (e.g. `§DOC`) that covers a section defined in more than one file now fails naming the files, instead of silently omitting the section. The hook now denies (`Policy resolution failed`) in this case. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
+- **Unmatched prefixes:** A prefix-only reference that matches no configured section now fails for both requested and embedded references. The hook now denies (`Policy resolution failed`) for unmatched embedded prefixes. Rollout risk: policies whose prose mentions an unconfigured prefix will be denied until the prefix is configured or the reference is removed. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
+- **Continuation tokens:** `fetch_policies` now rejects malformed continuation tokens, including `""` and tokens lacking `chunk:`, with `Invalid continuation token: ...`. ([#34](https://github.com/rcrsr/mcp-policy-server/pull/34))
 
 ## [0.7.0] - 2026-09-08
 
