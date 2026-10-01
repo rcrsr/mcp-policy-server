@@ -739,6 +739,260 @@ Plain body. More words.
       expect(logs.some((l) => /^full text: \d+ chars$/.test(l))).toBe(true);
       expect(logs.some((l) => /^digest: \d+ chars \(2 summarized, 1 full\)$/.test(l))).toBe(true);
     });
+
+    it('delivers an untagged same-level descendant of a tagged ### section in full', () => {
+      const { agentsDir } = makeProject(tmpDir);
+      fs.writeFileSync(path.join(agentsDir, 'xx-engineer.md'), 'Follow §XX.');
+      const policyFile = path.join(tmpDir, 'policy-xx.md');
+      fs.writeFileSync(
+        policyFile,
+        [
+          '## {§XX.1} Untagged Parent',
+          'Parent first sentence about the parent.',
+          '',
+          '### {§XX.1.1} [IMPORTANT] Tagged Child',
+          'Tagged child first sentence. CHILD-BODY-MARKER.',
+          '',
+          '### {§XX.1.1.1} Grandchild At Level Three',
+          'Grandchild first sentence. GRANDCHILD-L3-MARKER.',
+          '',
+          '{§END}',
+          '',
+        ].join('\n')
+      );
+
+      const output = runHook(hookInput('xx-engineer'), {
+        env,
+        log,
+        configPath: policyFile,
+        mode: 'digest',
+      });
+
+      const text = JSON.stringify(output);
+      expect(text.split('CHILD-BODY-MARKER').length - 1).toBe(1);
+      expect(text.split('GRANDCHILD-L3-MARKER').length - 1).toBe(1);
+    });
+  });
+
+  describe('runHook policy-mode frontmatter', () => {
+    const MODE_POLICY = `## {§M.1} [IMPORTANT] Core
+Core rule applies always. More words.
+
+## {§M.2} Plain
+Plain body. More words.
+{§END}
+`;
+
+    function run(
+      frontmatter: string[],
+      opts: Partial<Parameters<typeof runHook>[1]> = {}
+    ): ReturnType<typeof runHook> {
+      const { agentsDir } = makeProject(tmpDir);
+      const agentFile = path.join(agentsDir, 'bot.md');
+      fs.writeFileSync(
+        agentFile,
+        ['---', 'name: bot', ...frontmatter, '---', 'Follow §M.1 and §M.2.'].join('\n')
+      );
+      const policyFile = path.join(tmpDir, 'policy-m.md');
+      fs.writeFileSync(policyFile, MODE_POLICY);
+      return runHook(hookInput('bot'), { env, log, configPath: policyFile, ...opts });
+    }
+
+    function promptOf(output: ReturnType<typeof runHook>): string {
+      if (
+        'hookSpecificOutput' in output &&
+        output.hookSpecificOutput.permissionDecision === 'allow'
+      ) {
+        return output.hookSpecificOutput.updatedInput.prompt;
+      }
+      throw new Error(`unexpected output ${JSON.stringify(output)}`);
+    }
+
+    it('lets frontmatter digest override a full flag', () => {
+      const prompt = promptOf(run(['policy-mode: digest'], { mode: 'full' }));
+
+      expect(prompt).toContain('§M.2 Plain: Plain body.');
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('lets frontmatter full override a digest flag', () => {
+      const prompt = promptOf(run(['policy-mode: full'], { mode: 'digest' }));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+    });
+
+    it('gives title-only lines for digest-minimal and keeps other digest options', () => {
+      const prompt = promptOf(
+        run(['policy-mode: digest-minimal'], { digest: { fetchInstructions: 'HOST FETCH' } })
+      );
+
+      expect(prompt).toContain('§M.2 Plain\n');
+      expect(prompt).not.toContain('Plain body.');
+      expect(prompt).toContain('§M.1 Core (full text below)');
+      expect(prompt).toContain('HOST FETCH');
+    });
+
+    it('forces minimal off for frontmatter digest even when the flag asks for minimal', () => {
+      const prompt = promptOf(run(['policy-mode: digest'], { digest: { minimal: true } }));
+
+      expect(prompt).toContain('§M.2 Plain: Plain body.');
+    });
+
+    it('denies an invalid value naming the agent file and the value', () => {
+      const output = run(['policy-mode: summary']);
+
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+      const text = JSON.stringify(output);
+      expect(text).toContain('summary');
+      expect(text).toContain(
+        'Policy resolution failed: invalid policy-mode \\"summary\\" in bot.md'
+      );
+      expect(text).not.toContain(tmpDir);
+    });
+
+    it('caps a long invalid value in the deny reason', () => {
+      const output = run([`policy-mode: ${'x'.repeat(100)}`]);
+
+      const text = JSON.stringify(output);
+      expect(text).toContain('x'.repeat(40));
+      expect(text).not.toContain('x'.repeat(41));
+    });
+
+    it('denies an invalid value even when the agent has the fetch_policies tool', () => {
+      const output = run(['tools: mcp__policy-server__fetch_policies', 'policy-mode: bogus']);
+
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+    });
+
+    it('denies an invalid value even when the agent has no § references', () => {
+      const { agentsDir } = makeProject(tmpDir);
+      fs.writeFileSync(
+        path.join(agentsDir, 'bot.md'),
+        '---\nname: bot\npolicy-mode: bogus\n---\nNo references here.'
+      );
+
+      const output = runHook(hookInput('bot'), { env, log });
+
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+    });
+
+    it('ignores a trailing YAML comment on policy-mode', () => {
+      const prompt = promptOf(run(['policy-mode: digest # compact']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('accepts a quoted policy-mode value with CRLF line endings', () => {
+      const prompt = promptOf(run(['policy-mode: "digest"\r']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('treats an empty policy-mode as absent', () => {
+      const prompt = promptOf(run(['policy-mode:']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+    });
+
+    it('reads policy-mode after a value containing ---', () => {
+      const prompt = promptOf(run(['description: a --- b', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('ignores a trailing YAML comment on tools', () => {
+      const prompt = promptOf(run(['tools: Read # Bash', 'policy-mode: digest']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+    });
+
+    it('falls back to full when tools are declared without Bash', () => {
+      const prompt = promptOf(run(['tools: Read, Write', 'policy-mode: digest']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+      expect(prompt).not.toContain('policy-cli fetch-policies');
+      expect(logs.some((l) => l.includes('no Bash'))).toBe(true);
+    });
+
+    it('keeps digest when tools include Bash', () => {
+      const prompt = promptOf(run(['tools: Read, Bash', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('keeps digest when Bash is scoped', () => {
+      const prompt = promptOf(run(['tools: Read, Bash(git:*), Grep', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('keeps digest when a block-style tools list includes Bash', () => {
+      const prompt = promptOf(run(['tools:', '  - Read', '  - Bash', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('falls back to full when a block-style tools list lacks Bash', () => {
+      const prompt = promptOf(run(['tools:', '  - Read', '  - Write', 'policy-mode: digest']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+      expect(prompt).not.toContain('policy-cli fetch-policies');
+    });
+
+    it('falls back to full when an inline list lacks Bash', () => {
+      const prompt = promptOf(run(['tools: [Read, Write]', 'policy-mode: digest']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+    });
+
+    it('keeps digest when a CRLF block-style tools list includes Bash', () => {
+      const prompt = promptOf(run(['tools:\r\n  - Read\r\n  - Bash\r\npolicy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('does not apply the guard when tools is empty', () => {
+      const prompt = promptOf(run(['tools:', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('does not apply the Bash guard to a mode taken from the flag', () => {
+      const prompt = promptOf(run(['tools: Read'], { mode: 'digest' }));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('behaves as before when the key is absent', () => {
+      const withKey = promptOf(run([], { mode: 'digest' }));
+      const plain = promptOf(run([]));
+
+      expect(withKey).toContain('policy-cli fetch-policies');
+      expect(plain).toContain('## {§M.2} Plain');
+    });
+
+    it('logs the resolved mode and its source', () => {
+      run(['policy-mode: digest']);
+      expect(logs).toContain('mode: digest, source: frontmatter');
+
+      run([], { mode: 'digest' });
+      expect(logs).toContain('mode: digest, source: flag');
+
+      run([]);
+      expect(logs).toContain('mode: full, source: default');
+    });
+
+    it('logs the frontmatter-fallback source when digest is ignored for lack of Bash', () => {
+      run(['tools: Read', 'policy-mode: digest']);
+
+      expect(logs).toContain('mode: full, source: frontmatter-fallback');
+    });
   });
 });
 

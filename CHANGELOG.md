@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`policy-mode` agent frontmatter:** An agent file can set `policy-mode: full|digest|digest-minimal` to choose its own injection mode. Precedence is frontmatter, then `--mode`/`--digest-minimal`, then `full`. An invalid value denies with a reason naming the agent file and value. A digest mode from frontmatter falls back to full when the agent declares `tools:` without `Bash`. `--debug` logs the resolved mode and its source. ([#46](https://github.com/rcrsr/mcp-policy-server/pull/46))
+
+### Fixed
+
+- **Digest full text omitted:** Digest mode now injects full text for every section marked `(full text below)`. An untagged `###` descendant of a tagged `###` section was listed as full text but left out. ([#46](https://github.com/rcrsr/mcp-policy-server/pull/46))
+
 ## [0.8.2] - 2026-10-01
 
 ### Security

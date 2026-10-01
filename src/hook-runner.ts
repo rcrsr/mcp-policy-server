@@ -115,22 +115,115 @@ const POLICY_TOOL_PATTERN = /^mcp__(?:\w+_)?policy-server__fetch_policies$/;
  * @returns True when the agent declares the fetch_policies tool
  */
 export function agentHasPolicyTool(content: string): boolean {
-  if (!content.startsWith('---')) {
-    return false;
-  }
-
-  const endIndex = content.indexOf('---', 3);
-  if (endIndex === -1) {
-    return false;
-  }
-
-  const frontmatter = content.slice(3, endIndex);
-  const toolsMatch = frontmatter.match(/^tools:\s*(.+)$/m);
+  const toolsMatch = agentFrontmatter(content)?.match(/^tools:\s*(.+)$/m);
   if (!toolsMatch) {
     return false;
   }
 
-  return toolsMatch[1].split(/[\s,[\]"']+/).some((token) => POLICY_TOOL_PATTERN.test(token));
+  return stripYamlComment(toolsMatch[1])
+    .split(/[\s,[\]"']+/)
+    .some((token) => POLICY_TOOL_PATTERN.test(token));
+}
+
+/** Injection modes an agent can select in its `policy-mode` frontmatter key */
+type AgentPolicyMode = 'full' | 'digest' | 'digest-minimal';
+
+const AGENT_POLICY_MODES: readonly AgentPolicyMode[] = ['full', 'digest', 'digest-minimal'];
+
+/** Frontmatter text between the leading `---` and a closing `---` on its own line, or null */
+function agentFrontmatter(content: string): string | null {
+  if (!content.startsWith('---')) {
+    return null;
+  }
+  const closing = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(content.slice(3));
+  return closing ? content.slice(3, 3 + closing.index) : null;
+}
+
+/** Drop a trailing YAML comment (` # ...`) from a frontmatter value */
+function stripYamlComment(value: string): string {
+  return value.replace(/\s+#.*$/, '');
+}
+
+/**
+ * Read the `policy-mode` key from agent frontmatter
+ *
+ * @param content - Agent file content
+ * @returns `{ ok: true, mode }` (mode undefined when the key is absent), or
+ *   `{ ok: false, value }` carrying the unrecognised value
+ * @example
+ * ```typescript
+ * readAgentPolicyMode('---\npolicy-mode: digest\n---\n'); // { ok: true, mode: 'digest' }
+ * ```
+ */
+function readAgentPolicyMode(
+  content: string
+): { ok: true; mode?: AgentPolicyMode } | { ok: false; value: string } {
+  const match = agentFrontmatter(content)?.match(/^policy-mode:[ \t]*([^\r\n]*)/m);
+  const value = stripYamlComment(match?.[1] ?? '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  // An empty `policy-mode:` is treated like an absent key.
+  if (!match || value === '') {
+    return { ok: true };
+  }
+  const mode = AGENT_POLICY_MODES.find((candidate) => candidate === value);
+  return mode ? { ok: true, mode } : { ok: false, value };
+}
+
+/**
+ * Check whether agent frontmatter declares `tools:` without a Bash token
+ *
+ * Reads the inline value plus any block-list continuation lines (indented or
+ * `-` prefixed). A scoped entry such as `Bash(git:*)` counts as Bash.
+ *
+ * @param content - Agent file content
+ * @returns True only when a tools key exists and none of its entries is Bash
+ */
+function agentToolsLackBash(content: string): boolean {
+  const toolsMatch = agentFrontmatter(content)?.match(
+    /^tools:([^\r\n]*(?:\r?\n(?:[ \t]+|-)[^\r\n]*)*)/m
+  );
+  // An empty `tools:` is treated like an absent key: no guard.
+  const tools = stripYamlComment(toolsMatch?.[1] ?? '');
+  if (!toolsMatch || tools.trim() === '') {
+    return false;
+  }
+  return !/(?<![\w-])Bash(?![\w-])/.test(tools);
+}
+
+/** Injection mode with where it came from */
+interface ResolvedMode {
+  mode: 'full' | 'digest';
+  minimal: boolean;
+  source: 'frontmatter' | 'frontmatter-fallback' | 'flag' | 'default';
+}
+
+/**
+ * Resolve the injection mode: agent frontmatter, then run options, then full
+ *
+ * `digest` forces minimal off and `digest-minimal` forces it on; other digest
+ * options always come from options.digest.
+ *
+ * @param agentMode - Value of the agent's `policy-mode` key, if any
+ * @param options - Hook run options
+ * @returns Mode, minimal flag, and source
+ */
+function resolveInjectionMode(
+  agentMode: AgentPolicyMode | undefined,
+  options: Pick<HookRunOptions, 'mode' | 'digest'>
+): ResolvedMode {
+  if (agentMode === 'full') return { mode: 'full', minimal: false, source: 'frontmatter' };
+  if (agentMode === 'digest') return { mode: 'digest', minimal: false, source: 'frontmatter' };
+  if (agentMode === 'digest-minimal')
+    return { mode: 'digest', minimal: true, source: 'frontmatter' };
+  if (options.mode !== undefined) {
+    return {
+      mode: options.mode,
+      minimal: options.digest?.minimal ?? false,
+      source: 'flag',
+    };
+  }
+  return { mode: 'full', minimal: false, source: 'default' };
 }
 
 /**
@@ -409,20 +502,6 @@ function digestLine(entry: DigestEntry, options: DigestOptions, titleOnly: boole
   return `${entry.id}${rest}${entry.important ? FULL_TEXT_MARKER : ''}`;
 }
 
-/** True when a proper ancestor of id (below the entry itself) is important, so its block already covers id */
-function isInheritedImportant(
-  id: SectionNotation,
-  tagged: ReadonlySet<SectionNotation>,
-  entryId: SectionNotation
-): boolean {
-  let parent = id.substring(0, id.lastIndexOf('.'));
-  while (parent.includes('.') && parent !== entryId) {
-    if (isImportantSection(parent as SectionNotation, tagged)) return true;
-    parent = parent.substring(0, parent.lastIndexOf('.'));
-  }
-  return false;
-}
-
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -461,6 +540,7 @@ export function buildPolicyDigest(
       important: entryImportant,
     });
     if (entryImportant) fullBlocks.push(section.content);
+    const sectionBlocks: string[] = [];
 
     for (const heading of headings) {
       if (heading.id === section.id || inventoryIds.has(heading.id)) continue;
@@ -474,20 +554,24 @@ export function buildPolicyDigest(
           important,
         });
       }
-      if (important && !entryImportant && !isInheritedImportant(heading.id, tagged, section.id)) {
+      if (important && !entryImportant) {
         const num = heading.id.slice(heading.id.indexOf('.') + 1);
         const headingPrefix = heading.id.slice(1, heading.id.indexOf('.'));
-        const extracted = extractSectionFromLines(lines, headingPrefix, num);
-        if (extracted) {
-          fullBlocks.push(extracted);
-        } else {
+        let block = extractSectionFromLines(lines, headingPrefix, num);
+        if (!block) {
           // Extractor only matches ## and ### headings; slice deeper headings directly
           // Stop at the first heading that is not a descendant of this one
           const next = headings.find(
             (other) => other.lineIndex > heading.lineIndex && !other.id.startsWith(`${heading.id}.`)
           );
           const end = next ? next.lineIndex : lines.length;
-          fullBlocks.push(lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, ''));
+          block = lines.slice(heading.lineIndex, end).join('\n').replace(/\s+$/, '');
+        }
+        // A same-level descendant is not covered by its ancestor's block, so
+        // containment (not id ancestry) decides whether the text is already delivered
+        if (!sectionBlocks.some((existing) => existing.includes(block))) {
+          sectionBlocks.push(block);
+          fullBlocks.push(block);
         }
       }
     }
@@ -588,6 +672,13 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   const agentContent = fs.readFileSync(agentPath, 'utf8');
   log(`agent content: ${agentContent.length} chars`);
 
+  const agentMode = readAgentPolicyMode(agentContent);
+  if (!agentMode.ok) {
+    log(`BLOCK: invalid policy-mode ${JSON.stringify(agentMode.value.slice(0, 40))}`);
+    return denyResponse(
+      `Policy resolution failed: invalid policy-mode ${JSON.stringify(agentMode.value.slice(0, 40))} in ${path.basename(agentPath)}: expected ${AGENT_POLICY_MODES.join(', ')}`
+    );
+  }
   if (agentHasPolicyTool(agentContent)) {
     log('EXIT: agent has MCP policy tool, skipping injection');
     return ALLOW_RESPONSE;
@@ -599,6 +690,17 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     log('EXIT: no § references in agent file');
     return ALLOW_RESPONSE;
   }
+
+  let resolved = resolveInjectionMode(agentMode.mode, options);
+  if (
+    resolved.source === 'frontmatter' &&
+    resolved.mode === 'digest' &&
+    agentToolsLackBash(agentContent)
+  ) {
+    log('policy-mode digest ignored: agent tools declare no Bash, falling back to full');
+    resolved = { mode: 'full', minimal: false, source: 'frontmatter-fallback' };
+  }
+  log(`mode: ${resolved.mode}${resolved.minimal ? ' (minimal)' : ''}, source: ${resolved.source}`);
 
   const effectiveConfigPath = discoverPolicyConfig(options.configPath, env, log);
 
@@ -639,7 +741,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   log(`full text: ${fetchResult.content.length} chars`);
 
   let injected = fetchResult.content;
-  if (options.mode === 'digest') {
+  if (resolved.mode === 'digest') {
     let digest: PolicyDigest;
     try {
       const tagged = findTaggedSections(
@@ -649,6 +751,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
       digest = buildPolicyDigest(fetchResult.inventory, tagged, {
         ...DEFAULT_DIGEST_OPTIONS,
         ...options.digest,
+        minimal: resolved.minimal,
         configValue: footerConfigValue(effectiveConfigPath ?? env.policyConfigEnv),
       });
     } catch (e) {

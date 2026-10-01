@@ -207,6 +207,34 @@ This expands `§DESIGN` to all `§DESIGN.*` sections and `§API` to all `§API.*
 
 A prefix-only reference fails when the prefix matches no section, or when any section it covers is defined in more than one file. This applies to prefixes written in an agent file and to prefixes embedded in fetched policy text. Policy prose that mentions an unconfigured prefix (for example `§LEGACY`) fails resolution until you configure the prefix, remove the reference, or wrap it in backticks so it is not extracted.
 
+### Per-Agent Injection Mode
+
+By default the hook injects the full text of every referenced section. Add `policy-mode` to an agent's frontmatter to choose a different mode for that agent:
+
+```markdown
+---
+name: cli-engineer
+tools: Read, Write, Edit, Bash
+policy-mode: digest
+---
+
+Required policies: §DESIGN, §API
+```
+
+| Value | Effect |
+|-------|--------|
+| `full` | Inject the full text of every referenced section |
+| `digest` | Inject one line per section, plus the full text of `[IMPORTANT]` sections |
+| `digest-minimal` | Same as `digest`, with each line limited to the section id and title |
+
+- The agent's `policy-mode` overrides the hook's `--mode` and `--digest-minimal` flags. Without the key, the flags apply, then `full`.
+- `--digest-depth`, `--digest-line-chars`, and `--fetch-instructions` still apply from the hook command.
+- An invalid value denies the Task call with a reason naming the agent file and the value.
+- A digest agent fetches the rest through `policy-cli` in the digest footer, so it needs `Bash`. When `tools:` is declared without `Bash`, the hook falls back to `full`.
+- Run the hook with `--debug <file>` to log the resolved mode and where it came from.
+
+See [Configuration Reference](docs/CONFIGURATION_REFERENCE.md#agent-file-format) for details.
+
 ---
 
 ## Method 3: MCP Server

@@ -167,6 +167,7 @@ Add § references anywhere in your agent file. The hook extracts all references 
 ---
 name: my-agent
 description: Agent description
+policy-mode: digest
 ---
 
 Follow §DESIGN.1 and §DESIGN.2 when working.
@@ -179,6 +180,20 @@ Your agent instructions here...
 - § references can appear anywhere—no special format required
 - References inside code fences are ignored (for documenting examples)
 - Prefix-only references like `§API` expand to all `§API.*` sections. They fail when no section matches the prefix or a covered section is duplicated
+
+**`policy-mode` frontmatter (optional):**
+
+| Value | Effect |
+|-------|--------|
+| `full` | Inject full text of every referenced section |
+| `digest` | Digest mode, never title-only (overrides `--digest-minimal`) |
+| `digest-minimal` | Same as `--mode digest --digest-minimal` (title-only lines) |
+
+- Precedence: agent frontmatter, then `--mode`/`--digest-minimal`, then `full`. An agent without the key behaves as before
+- `--digest-depth`, `--digest-line-chars`, and `--fetch-instructions` still apply from the CLI
+- An invalid value returns `permissionDecision: "deny"` with a reason naming the agent file and the bad value
+- When the mode comes from frontmatter and `tools:` is declared without `Bash`, a digest mode falls back to `full`, because the footer's fetch command needs Bash
+- `--debug` logs the resolved mode and its source (`frontmatter`, `flag`, or `default`), and the Bash fallback
 
 ---
 
