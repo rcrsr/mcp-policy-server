@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-01
+
 ### Changed
 
 - **Dependency update:** Updated all npm dependencies to latest, including `@modelcontextprotocol/sdk` 1.31.0 and `oxfmt` 0.71.0, and bumped `github/codeql-action` to v4.38.0. ([#39](https://github.com/rcrsr/mcp-policy-server/pull/39))
@@ -241,6 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of MCP Policy Server
 
+[0.8.1]: https://github.com/rcrsr/mcp-policy-server/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/rcrsr/mcp-policy-server/compare/v0.6.3...v0.6.4
