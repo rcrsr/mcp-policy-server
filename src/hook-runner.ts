@@ -127,7 +127,7 @@ export function agentHasPolicyTool(content: string): boolean {
     return false;
   }
 
-  return /mcp__(?:\w+_)*policy-server__fetch_policies/.test(toolsMatch[1]);
+  return /mcp__(?:\w+_)?policy-server__fetch_policies/.test(toolsMatch[1]);
 }
 
 /**

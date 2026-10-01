@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Regex injection:** Section extraction escapes the prefix and section number before building a regex, so metacharacters match literally.
+- **ReDoS:** Agent tool detection uses a linear-time pattern for `mcp__*policy-server__fetch_policies` names.
+
 ## [0.8.1] - 2026-10-01
 
 ### Changed

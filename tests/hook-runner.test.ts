@@ -107,6 +107,15 @@ tools: mcp__policy-server__fetch_policies
     expect(agentHasPolicyTool(content)).toBe(false);
   });
 
+  it('should reject long non-matching tool names in linear time', () => {
+    const content = `---
+tools: mcp__${'a_'.repeat(50000)}
+---`;
+    const start = Date.now();
+    expect(agentHasPolicyTool(content)).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
   it('should handle policy tool as only tool', () => {
     const content = `---
 tools: mcp__policy-server__fetch_policies
