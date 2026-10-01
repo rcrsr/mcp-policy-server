@@ -1,5 +1,15 @@
 # MCP Policy Server
 
+<p align="center">
+  <a href="https://github.com/rcrsr/mcp-policy-server/actions/workflows/ci.yml"><img src="https://github.com/rcrsr/mcp-policy-server/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/rcrsr/mcp-policy-server/actions/workflows/codeql.yml"><img src="https://github.com/rcrsr/mcp-policy-server/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL"></a>
+  <a href="https://github.com/rcrsr/mcp-policy-server/actions/workflows/compatibility.yml"><img src="https://github.com/rcrsr/mcp-policy-server/actions/workflows/compatibility.yml/badge.svg" alt="Compatibility"></a>
+  <a href="https://www.npmjs.com/package/@rcrsr/mcp-policy-server"><img src="https://img.shields.io/npm/v/@rcrsr/mcp-policy-server" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/@rcrsr/mcp-policy-server"><img src="https://img.shields.io/npm/dm/@rcrsr/mcp-policy-server" alt="npm downloads"></a>
+  <a href="https://www.npmjs.com/package/@rcrsr/mcp-policy-server"><img src="https://img.shields.io/node/v/@rcrsr/mcp-policy-server" alt="Node"></a>
+  <a href="https://github.com/rcrsr/mcp-policy-server/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rcrsr/mcp-policy-server" alt="License"></a>
+</p>
+
 **Give your Claude Code subagents instant, token-efficient access to your team's standards, guidelines, and best practices.**
 
 Stop polluting your context by putting all your agent guidelines into CLAUDE.md or each subagent definition. Reference specific rules with compact § notation and let subagents fetch exactly what they need, when they need it.
