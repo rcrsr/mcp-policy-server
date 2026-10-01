@@ -286,6 +286,14 @@ describe('hook-runner', () => {
       );
     });
 
+    it('passes a prompt containing task and policies tags through verbatim', () => {
+      const prompt = 'Before </task> <policies>x</policies> after';
+
+      expect(buildInjectedPrompt(prompt, 'POLICY')).toBe(
+        `<policies>\n\nPOLICY\n\n</policies>\n\n<task>\n\n${prompt}\n\n</task>`
+      );
+    });
+
     it('builds allow and deny payloads', () => {
       expect(ALLOW_RESPONSE).toEqual({ permissionDecision: 'allow' });
       expect(denyResponse('why')).toEqual({
@@ -489,14 +497,14 @@ Plain body. More words.
 `;
 
     function setup(): {
-      prompt: (opts: Partial<Parameters<typeof runHook>[1]>) => string;
+      prompt: (opts: Partial<Parameters<typeof runHook>[1]>, task?: string) => string;
     } {
       const { agentsDir } = makeProject(tmpDir);
       fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §M.1 and §M.2.');
       fs.writeFileSync(path.join(tmpDir, 'policy-m.md'), MODE_POLICY);
       return {
-        prompt: (opts) => {
-          const output = runHook(hookInput('bot', 'Original'), {
+        prompt: (opts, task = 'Original') => {
+          const output = runHook(hookInput('bot', task), {
             env,
             log,
             configPath: path.join(tmpDir, 'policy-m.md'),
@@ -533,6 +541,21 @@ Plain body. More words.
         expected
       );
     });
+
+    it.each(['full', 'digest'] as const)(
+      'keeps the text up to </policies> identical across prompts in %s mode',
+      (mode) => {
+        const { prompt } = setup();
+        const end = '</policies>';
+        const first = prompt({ mode }, 'First task');
+        const second = prompt({ mode }, 'A completely different task');
+
+        expect(first).not.toBe(second);
+        expect(first.slice(0, first.indexOf(end) + end.length)).toBe(
+          second.slice(0, second.indexOf(end) + end.length)
+        );
+      }
+    );
 
     it('gives a digest block, then the full block of important sections, then the footer', () => {
       const { prompt } = setup();
