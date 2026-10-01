@@ -1,50 +1,35 @@
-# A single npm package at the root, so `directories` needs no packages/ glob.
+# Security updates only. `open-pull-requests-limit: 0` turns off routine
+# version bumps; Dependabot security updates (enabled in repo settings) ignore
+# this limit and still open PRs for advisories.
 version: 2
 
 updates:
   - package-ecosystem: npm
-    directories:
-      - '/'
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     labels:
       - 'area:dx'
     groups:
-      # One PR per tool family. Ungrouped, the shared toolchain produces a
-      # separate PR per bump, which guarantees the updates get ignored.
-      oxc:
+      # Batch advisories found in the same run into one PR instead of one per package.
+      security:
+        applies-to: security-updates
         patterns:
-          - 'oxlint'
-          - 'oxfmt'
-      typescript:
-        patterns:
-          - 'typescript'
-          - 'tsc-files'
-          - '@types/*'
-      testing:
-        patterns:
-          - 'vitest'
-          - '@vitest/*'
-      dev-tooling:
-        patterns:
-          - 'knip'
-          - 'lefthook'
-          - 'rimraf'
+          - '*'
 
-  # Action versions. Separate ecosystem, so it needs its own entry. This is
-  # what keeps the SHA pins in .github/workflows current: dependabot reads the
-  # trailing release comment on each `uses:` to know which release the SHA
-  # represents.
+  # Action SHA pins in .github/workflows only move on a security advisory.
   - package-ecosystem: github-actions
     directory: '/'
     schedule:
       interval: weekly
       day: monday
+    open-pull-requests-limit: 0
     labels:
       - 'area:dx'
     groups:
-      actions:
+      security:
+        applies-to: security-updates
         patterns:
           - '*'
