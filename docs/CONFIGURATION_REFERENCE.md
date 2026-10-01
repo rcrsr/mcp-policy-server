@@ -143,13 +143,13 @@ Directories are searched in order. The first matching agent file is used.
 2. Hook extracts the agent name from `tool_input.subagent_type` (e.g., `"code-reviewer"`)
 3. Hook locates the agent file by searching `--agents-dir` directories for `<agent-name>.md`
 4. Hook reads the agent file and extracts all § references (ignoring code-fenced and inline-code content)
-5. Policies are fetched and injected into the prompt via `hookSpecificOutput.updatedInput.prompt`, appended inside `<policies>` tags
+5. Policies are fetched and injected into the prompt via `hookSpecificOutput.updatedInput.prompt`, placed before the original prompt inside `<policies>` tags, with the original prompt wrapped in `<task>` tags
 
 **Hook responses:**
 
 | Situation | Response |
 |-----------|----------|
-| Policies resolved | `hookSpecificOutput.updatedInput.prompt` with policies appended; `permissionDecision: "allow"` |
+| Policies resolved | `hookSpecificOutput.updatedInput.prompt` with policies placed before the task; `permissionDecision: "allow"` |
 | Agent file not found, no § references, agent declares `mcp__policy-server__fetch_policies` in `tools`, invalid stdin, or config error | `{"permissionDecision": "allow"}` (tool call proceeds unchanged) |
 | A referenced section is missing or defined in more than one file | `permissionDecision: "deny"` with `permissionDecisionReason` naming the failed reference |
 

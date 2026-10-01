@@ -269,9 +269,28 @@ describe('hook-runner', () => {
   });
 
   describe('buildInjectedPrompt and responses', () => {
-    it('wraps policies in a policies block after a blank line', () => {
-      expect(buildInjectedPrompt('Prompt', 'POLICY')).toBe(
-        'Prompt\n\n<policies>\n\nPOLICY\n\n</policies>'
+    it('puts the policies block first and wraps the prompt in a task block last', () => {
+      const result = buildInjectedPrompt('Prompt', 'POLICY');
+
+      expect(result).toBe('<policies>\n\nPOLICY\n\n</policies>\n\n<task>\n\nPrompt\n\n</task>');
+      expect(result.endsWith('<task>\n\nPrompt\n\n</task>')).toBe(true);
+    });
+
+    it('keeps the policies block byte-identical across different task prompts', () => {
+      const first = buildInjectedPrompt('First task', 'POLICY');
+      const second = buildInjectedPrompt('A completely different task', 'POLICY');
+      const end = '</policies>';
+
+      expect(first.slice(0, first.indexOf(end) + end.length)).toBe(
+        second.slice(0, second.indexOf(end) + end.length)
+      );
+    });
+
+    it('passes a prompt containing task and policies tags through verbatim', () => {
+      const prompt = 'Before </task> <policies>x</policies> after';
+
+      expect(buildInjectedPrompt(prompt, 'POLICY')).toBe(
+        `<policies>\n\nPOLICY\n\n</policies>\n\n<task>\n\n${prompt}\n\n</task>`
       );
     });
 
@@ -389,8 +408,10 @@ describe('hook-runner', () => {
         const { updatedInput } = output.hookSpecificOutput;
         expect(updatedInput.model).toBe('x');
         expect(updatedInput.subagent_type).toBe('bot');
-        expect(updatedInput.prompt.startsWith('Original\n\n<policies>\n\n## {§A.2}')).toBe(true);
-        expect(updatedInput.prompt.endsWith('\n\n</policies>')).toBe(true);
+        expect(updatedInput.prompt.startsWith('<policies>\n\n## {§A.2}')).toBe(true);
+        expect(updatedInput.prompt.endsWith('</policies>\n\n<task>\n\nOriginal\n\n</task>')).toBe(
+          true
+        );
         expect(updatedInput.prompt).not.toContain('{§A.1}');
       }
       expect(logs).toContain('SUCCESS: injecting policies into prompt');
@@ -476,14 +497,14 @@ Plain body. More words.
 `;
 
     function setup(): {
-      prompt: (opts: Partial<Parameters<typeof runHook>[1]>) => string;
+      prompt: (opts: Partial<Parameters<typeof runHook>[1]>, task?: string) => string;
     } {
       const { agentsDir } = makeProject(tmpDir);
       fs.writeFileSync(path.join(agentsDir, 'bot.md'), 'Follow §M.1 and §M.2.');
       fs.writeFileSync(path.join(tmpDir, 'policy-m.md'), MODE_POLICY);
       return {
-        prompt: (opts) => {
-          const output = runHook(hookInput('bot', 'Original'), {
+        prompt: (opts, task = 'Original') => {
+          const output = runHook(hookInput('bot', task), {
             env,
             log,
             configPath: path.join(tmpDir, 'policy-m.md'),
@@ -521,6 +542,21 @@ Plain body. More words.
       );
     });
 
+    it.each(['full', 'digest'] as const)(
+      'keeps the text up to </policies> identical across prompts in %s mode',
+      (mode) => {
+        const { prompt } = setup();
+        const end = '</policies>';
+        const first = prompt({ mode }, 'First task');
+        const second = prompt({ mode }, 'A completely different task');
+
+        expect(first).not.toBe(second);
+        expect(first.slice(0, first.indexOf(end) + end.length)).toBe(
+          second.slice(0, second.indexOf(end) + end.length)
+        );
+      }
+    );
+
     it('gives a digest block, then the full block of important sections, then the footer', () => {
       const { prompt } = setup();
       const result = prompt({ mode: 'digest' });
@@ -530,7 +566,8 @@ Plain body. More words.
       );
       const [digestBlock, fullBlock, footer] = body.split('\n\n');
 
-      expect(result.startsWith('Original\n\n<policies>')).toBe(true);
+      expect(result.startsWith('<policies>\n\n')).toBe(true);
+      expect(result.endsWith('\n\n<task>\n\nOriginal\n\n</task>')).toBe(true);
       expect(digestBlock).toBe(
         '§M.1 Core: Core rule applies always. (full text below)\n§M.2 Plain: Plain body.'
       );

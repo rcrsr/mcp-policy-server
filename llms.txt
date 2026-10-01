@@ -4,7 +4,7 @@
 
 How to operate the tool, in order of preference:
 
-1. If you are a Claude Code subagent and the policies plugin or `policy-hook` is configured, do nothing. Write § references anywhere in your agent file. The hook fetches them and appends the content to your prompt inside `<policies>` tags before you run. References inside code fences or inline backticks are ignored.
+1. If you are a Claude Code subagent and the policies plugin or `policy-hook` is configured, do nothing. Write § references anywhere in your agent file. The hook fetches them and places the content before your task prompt inside `<policies>` tags, with the task wrapped in `<task>` tags. References inside code fences or inline backticks are ignored.
 2. If the `policy-server` MCP server is connected, call `fetch_policies` with `{"sections": ["§PREFIX.1", "§PREFIX.2.3-5"]}`. Call `list_sources` first when you do not know which prefixes exist. Call `validate_references` before relying on references you wrote yourself.
 3. From a shell or CI, run `npx -p @rcrsr/mcp-policy-server policy-cli <subcommand> --config "./policies/*.md"`.
 
@@ -41,7 +41,7 @@ CLI subcommands (`policy-cli`):
 
 Hook (`policy-hook`, Claude Code `PreToolUse` on matcher `Task`):
 
-- Reads the tool call JSON on stdin. Looks up `tool_input.subagent_type` as `<name>.md` in the agents directories, scans that file for § references, fetches them, and returns `hookSpecificOutput.updatedInput.prompt` with the policies appended.
+- Reads the tool call JSON on stdin. Looks up `tool_input.subagent_type` as `<name>.md` in the agents directories, scans that file for § references, fetches them, and returns `hookSpecificOutput.updatedInput.prompt` with the policies placed before the task prompt.
 - Returns `{"permissionDecision": "allow"}` unchanged when the agent file is missing, has no references, or declares `mcp__policy-server__fetch_policies` in its `tools` frontmatter.
 - Returns `permissionDecision: "deny"` with a reason when a referenced section does not exist or is duplicated. Fix the reference or the policy file.
 - Options: `-c, --config`, `-a, --agents-dir` (repeatable, searched in order), `-d, --debug <file>`, `--mode <digest|full>` (default `full`), `--digest-depth <n>` (default 2), `--digest-line-chars <n>` (default 200, excluding the full-text marker), `--digest-minimal`, `--fetch-instructions <text>`. Digest flags are accepted and ignored in full mode. Invalid flag values exit 1. `--digest-depth` and `--digest-line-chars` need a positive integer; `--digest-depth` has a minimum of 2. With no options it auto-discovers `$CLAUDE_PROJECT_DIR/.claude/agents`, `$CLAUDE_PROJECT_DIR/.claude/policies/*.md`, `$CLAUDE_PLUGIN_ROOT/agents`, and `$CLAUDE_PLUGIN_ROOT/policies/*.md`.
