@@ -566,6 +566,32 @@ Text after with §META.2
       const refs = findEmbeddedReferences(content);
       expect(refs).toEqual(['§APP-HOOK', '§SYS-TPL']);
     });
+
+    it('should find prefix-only reference followed by a sentence-ending period', () => {
+      const refs = findEmbeddedReferences('See §LEGACY.');
+      expect(refs).toEqual(['§LEGACY']);
+    });
+
+    it('should find prefix-only references with a period before a newline or in parentheses', () => {
+      const refs = findEmbeddedReferences('(see §TS.)\nNext §PY.\nMore');
+      expect(refs).toEqual(['§TS', '§PY']);
+    });
+
+    it('should find hyphenated prefix-only reference with trailing period', () => {
+      const refs = findEmbeddedReferences('Use §APP-HOOK.');
+      expect(refs).toEqual(['§APP-HOOK']);
+    });
+
+    it('should yield only the section reference when a section ref has a trailing period', () => {
+      const refs = findEmbeddedReferences('See §APP.7.');
+      expect(refs).toEqual(['§APP.7']);
+      expect(refs).not.toContain('§APP');
+    });
+
+    it('should treat a dot followed by a non-digit as a bare prefix', () => {
+      const refs = findEmbeddedReferences('See §LEGACY.x');
+      expect(refs).toEqual(['§LEGACY']);
+    });
   });
 
   describe('isParentSection', () => {

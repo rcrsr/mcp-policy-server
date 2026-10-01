@@ -377,9 +377,9 @@ export function findEmbeddedReferences(content: string): SectionNotation[] {
   }
 
   // Match prefix-only references (§TS, §PY, §APP-HOOK, §CODE2)
-  // Negative lookahead excludes: dot (section number), hyphen (extended prefix), word chars
+  // Negative lookahead excludes: dot followed by a digit (section number), hyphen (extended prefix), word chars
   // Excludes §END which is a special end-of-section marker
-  const prefixPattern = /§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)(?![.\w-])/g;
+  const prefixPattern = /§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)(?!\.\d|[\w-])/g;
   while ((match = prefixPattern.exec(cleanedContent)) !== null) {
     if (match[1] !== 'END') {
       matches.push(`§${match[1]}` as SectionNotation);
