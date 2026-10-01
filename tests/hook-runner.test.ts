@@ -769,8 +769,8 @@ Plain body. More words.
       });
 
       const text = JSON.stringify(output);
-      expect(text).toContain('CHILD-BODY-MARKER');
-      expect(text).toContain('GRANDCHILD-L3-MARKER');
+      expect(text.split('CHILD-BODY-MARKER').length - 1).toBe(1);
+      expect(text.split('GRANDCHILD-L3-MARKER').length - 1).toBe(1);
     });
   });
 
@@ -827,7 +827,7 @@ Plain body. More words.
       );
 
       expect(prompt).toContain('§M.2 Plain\n');
-      expect(prompt).not.toContain('Plain body.\n\n');
+      expect(prompt).not.toContain('Plain body.');
       expect(prompt).toContain('§M.1 Core (full text below)');
       expect(prompt).toContain('HOST FETCH');
     });
@@ -846,7 +846,70 @@ Plain body. More words.
       );
       const text = JSON.stringify(output);
       expect(text).toContain('summary');
-      expect(text).toContain(path.join(tmpDir, '.claude', 'agents', 'bot.md'));
+      expect(text).toContain(
+        'Policy resolution failed: invalid policy-mode \\"summary\\" in bot.md'
+      );
+      expect(text).not.toContain(tmpDir);
+    });
+
+    it('caps a long invalid value in the deny reason', () => {
+      const output = run([`policy-mode: ${'x'.repeat(100)}`]);
+
+      const text = JSON.stringify(output);
+      expect(text).toContain('x'.repeat(40));
+      expect(text).not.toContain('x'.repeat(41));
+    });
+
+    it('denies an invalid value even when the agent has the fetch_policies tool', () => {
+      const output = run(['tools: mcp__policy-server__fetch_policies', 'policy-mode: bogus']);
+
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+    });
+
+    it('denies an invalid value even when the agent has no § references', () => {
+      const { agentsDir } = makeProject(tmpDir);
+      fs.writeFileSync(
+        path.join(agentsDir, 'bot.md'),
+        '---\nname: bot\npolicy-mode: bogus\n---\nNo references here.'
+      );
+
+      const output = runHook(hookInput('bot'), { env, log });
+
+      expect('hookSpecificOutput' in output && output.hookSpecificOutput.permissionDecision).toBe(
+        'deny'
+      );
+    });
+
+    it('ignores a trailing YAML comment on policy-mode', () => {
+      const prompt = promptOf(run(['policy-mode: digest # compact']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('accepts a quoted policy-mode value with CRLF line endings', () => {
+      const prompt = promptOf(run(['policy-mode: "digest"\r']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('treats an empty policy-mode as absent', () => {
+      const prompt = promptOf(run(['policy-mode:']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
+    });
+
+    it('reads policy-mode after a value containing ---', () => {
+      const prompt = promptOf(run(['description: a --- b', 'policy-mode: digest']));
+
+      expect(prompt).toContain('policy-cli fetch-policies');
+    });
+
+    it('ignores a trailing YAML comment on tools', () => {
+      const prompt = promptOf(run(['tools: Read # Bash', 'policy-mode: digest']));
+
+      expect(prompt).toContain('## {§M.2} Plain');
     });
 
     it('falls back to full when tools are declared without Bash', () => {
@@ -923,6 +986,12 @@ Plain body. More words.
 
       run([]);
       expect(logs).toContain('mode: full, source: default');
+    });
+
+    it('logs the frontmatter-fallback source when digest is ignored for lack of Bash', () => {
+      run(['tools: Read', 'policy-mode: digest']);
+
+      expect(logs).toContain('mode: full, source: frontmatter-fallback');
     });
   });
 });

@@ -21,7 +21,7 @@ interface ParsedArgs {
   configPath?: string;
   agentsDirs: string[];
   debugFile?: string;
-  mode: 'full' | 'digest';
+  mode?: 'full' | 'digest';
   digest: Partial<DigestOptions>;
 }
 
@@ -84,7 +84,7 @@ function parseArgs(args: string[]): ParsedArgs {
   let configPath: string | undefined;
   const agentsDirs: string[] = [];
   let debugFile: string | undefined;
-  let mode: 'full' | 'digest' = 'full';
+  let mode: 'full' | 'digest' | undefined;
   const digest: Partial<DigestOptions> = {};
 
   const requireAny = (flag: string, value: string | undefined): string => {

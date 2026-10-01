@@ -115,22 +115,14 @@ const POLICY_TOOL_PATTERN = /^mcp__(?:\w+_)?policy-server__fetch_policies$/;
  * @returns True when the agent declares the fetch_policies tool
  */
 export function agentHasPolicyTool(content: string): boolean {
-  if (!content.startsWith('---')) {
-    return false;
-  }
-
-  const endIndex = content.indexOf('---', 3);
-  if (endIndex === -1) {
-    return false;
-  }
-
-  const frontmatter = content.slice(3, endIndex);
-  const toolsMatch = frontmatter.match(/^tools:\s*(.+)$/m);
+  const toolsMatch = agentFrontmatter(content)?.match(/^tools:\s*(.+)$/m);
   if (!toolsMatch) {
     return false;
   }
 
-  return toolsMatch[1].split(/[\s,[\]"']+/).some((token) => POLICY_TOOL_PATTERN.test(token));
+  return stripYamlComment(toolsMatch[1])
+    .split(/[\s,[\]"']+/)
+    .some((token) => POLICY_TOOL_PATTERN.test(token));
 }
 
 /** Injection modes an agent can select in its `policy-mode` frontmatter key */
@@ -138,13 +130,18 @@ type AgentPolicyMode = 'full' | 'digest' | 'digest-minimal';
 
 const AGENT_POLICY_MODES: readonly AgentPolicyMode[] = ['full', 'digest', 'digest-minimal'];
 
-/** Frontmatter text between the leading and closing `---`, or null when absent */
+/** Frontmatter text between the leading `---` and a closing `---` on its own line, or null */
 function agentFrontmatter(content: string): string | null {
   if (!content.startsWith('---')) {
     return null;
   }
-  const endIndex = content.indexOf('---', 3);
-  return endIndex === -1 ? null : content.slice(3, endIndex);
+  const closing = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(content.slice(3));
+  return closing ? content.slice(3, 3 + closing.index) : null;
+}
+
+/** Drop a trailing YAML comment (` # ...`) from a frontmatter value */
+function stripYamlComment(value: string): string {
+  return value.replace(/\s+#.*$/, '');
 }
 
 /**
@@ -161,11 +158,14 @@ function agentFrontmatter(content: string): string | null {
 function readAgentPolicyMode(
   content: string
 ): { ok: true; mode?: AgentPolicyMode } | { ok: false; value: string } {
-  const match = agentFrontmatter(content)?.match(/^policy-mode:[ \t]*(.*)$/m);
-  if (!match) {
+  const match = agentFrontmatter(content)?.match(/^policy-mode:[ \t]*([^\r\n]*)/m);
+  const value = stripYamlComment(match?.[1] ?? '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  // An empty `policy-mode:` is treated like an absent key.
+  if (!match || value === '') {
     return { ok: true };
   }
-  const value = match[1].trim().replace(/^["']|["']$/g, '');
   const mode = AGENT_POLICY_MODES.find((candidate) => candidate === value);
   return mode ? { ok: true, mode } : { ok: false, value };
 }
@@ -184,17 +184,18 @@ function agentToolsLackBash(content: string): boolean {
     /^tools:([^\r\n]*(?:\r?\n(?:[ \t]+|-)[^\r\n]*)*)/m
   );
   // An empty `tools:` is treated like an absent key: no guard.
-  if (!toolsMatch || toolsMatch[1].trim() === '') {
+  const tools = stripYamlComment(toolsMatch?.[1] ?? '');
+  if (!toolsMatch || tools.trim() === '') {
     return false;
   }
-  return !/(?<![\w-])Bash(?![\w-])/.test(toolsMatch[1]);
+  return !/(?<![\w-])Bash(?![\w-])/.test(tools);
 }
 
 /** Injection mode with where it came from */
 interface ResolvedMode {
   mode: 'full' | 'digest';
   minimal: boolean;
-  source: 'frontmatter' | 'flag' | 'default';
+  source: 'frontmatter' | 'frontmatter-fallback' | 'flag' | 'default';
 }
 
 /**
@@ -671,6 +672,13 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   const agentContent = fs.readFileSync(agentPath, 'utf8');
   log(`agent content: ${agentContent.length} chars`);
 
+  const agentMode = readAgentPolicyMode(agentContent);
+  if (!agentMode.ok) {
+    log(`BLOCK: invalid policy-mode ${JSON.stringify(agentMode.value.slice(0, 40))}`);
+    return denyResponse(
+      `Policy resolution failed: invalid policy-mode ${JSON.stringify(agentMode.value.slice(0, 40))} in ${path.basename(agentPath)}: expected ${AGENT_POLICY_MODES.join(', ')}`
+    );
+  }
   if (agentHasPolicyTool(agentContent)) {
     log('EXIT: agent has MCP policy tool, skipping injection');
     return ALLOW_RESPONSE;
@@ -683,13 +691,6 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     return ALLOW_RESPONSE;
   }
 
-  const agentMode = readAgentPolicyMode(agentContent);
-  if (!agentMode.ok) {
-    log(`BLOCK: invalid policy-mode "${agentMode.value}"`);
-    return denyResponse(
-      `Invalid policy-mode "${agentMode.value}" in ${agentPath}: expected ${AGENT_POLICY_MODES.join(', ')}`
-    );
-  }
   let resolved = resolveInjectionMode(agentMode.mode, options);
   if (
     resolved.source === 'frontmatter' &&
@@ -697,7 +698,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     agentToolsLackBash(agentContent)
   ) {
     log('policy-mode digest ignored: agent tools declare no Bash, falling back to full');
-    resolved = { mode: 'full', minimal: false, source: 'frontmatter' };
+    resolved = { mode: 'full', minimal: false, source: 'frontmatter-fallback' };
   }
   log(`mode: ${resolved.mode}${resolved.minimal ? ' (minimal)' : ''}, source: ${resolved.source}`);
 
