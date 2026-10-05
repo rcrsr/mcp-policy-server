@@ -791,7 +791,7 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
   }
 
   const skipped = fetchResult.inventory.length - inventory.length;
-  if (skipped > 0) log(`proforma: ${skipped} sections skipped`);
+  if (skipped > 0) log(`proforma: ${skipped} entries dropped`);
   if (inventory.length === 0) {
     log('EXIT: all resolved sections are proforma');
     return ALLOW_RESPONSE;

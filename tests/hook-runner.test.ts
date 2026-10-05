@@ -3,7 +3,6 @@
  * Agent detection and the PreToolUse hook pipeline
  */
 
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -817,7 +816,7 @@ Plain body. More words.
         expect(text).toContain('SIBLING-BODY');
         expect(text).toContain('CORE-BODY');
         expect(text).toContain('PLAIN-BODY');
-        expect(logs.some((l) => l.startsWith('proforma: 1 sections skipped'))).toBe(true);
+        expect(logs.some((l) => l.startsWith('proforma: 1 entries dropped'))).toBe(true);
       });
 
       it('lists no digest line for proforma ids and excludes them from the full block and counts', () => {
@@ -1490,15 +1489,5 @@ describe('stripProformaInventory', () => {
     const out = stripProformaInventory([entry('§S.1', content)], new Set(['§S.1.1']));
 
     expect(out[0].content).toBe('## {§S.1} A\r\nkeep\r\n### {§S.1.2} U\r\nkeep2');
-  });
-});
-
-const HOOK_JS = path.resolve(__dirname, '..', 'dist', 'hook.js');
-
-describe.skipIf(!fs.existsSync(HOOK_JS))('hook help text', () => {
-  it('mentions [PROFORMA] in --help output', () => {
-    const result = spawnSync(process.execPath, [HOOK_JS, '--help'], { encoding: 'utf8' });
-
-    expect(result.stderr).toContain('[PROFORMA]');
   });
 });

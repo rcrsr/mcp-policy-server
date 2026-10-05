@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Duplicate tag parsing:** A heading with a trailing duplicate tag such as `## {§X.1} [IMPORTANT] Title [important]` now parses as untagged instead of important. ([#48](https://github.com/rcrsr/mcp-policy-server/pull/48))
 - **Full mode tag lookup:** Full mode now reads the policy files for section tags, so it denies with `Policy resolution failed:` when they cannot be re-read. ([#48](https://github.com/rcrsr/mcp-policy-server/pull/48))
 
 ## [0.8.3] - 2026-10-01

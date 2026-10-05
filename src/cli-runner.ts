@@ -191,8 +191,9 @@ Validate policy file format including sections, numbering, and code fencing.
 Checks performed:
   - Section header format ({§PREFIX.NUMBER})
   - Heading tag syntax: a heading may carry one tag, [IMPORTANT] or [PROFORMA],
-    directly after the closing brace (MALFORMED_TAG is an error)
-  - Both tags on one heading (TAG_CONFLICT is an error)
+    directly after the closing brace; both tags on one heading are
+    MALFORMED_TAG (an error)
+  - [IMPORTANT] heading under a [PROFORMA] ancestor (TAG_CONFLICT is an error)
   - Heading level correctness (## for sections, ### for subsections)
   - Code fence matching (all opened blocks closed)
   - Orphan subsections (subsections without parent section)

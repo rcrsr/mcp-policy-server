@@ -310,7 +310,7 @@ The `policy-cli` binary provides subcommands for policy operations.
 | `resolve-references <ref>...` | Map § references to source files as JSON | Yes | A reference fails to resolve |
 | `check <file>` | Lint one policy file: header format, heading levels, code fences, orphan subsections, numbering gaps | No | Any error-level issue |
 
-`check` issue codes: `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP`, `MALFORMED_TAG` are errors; `MIXED_PREFIX` is a warning. Warnings do not affect the exit code.
+`check` issue codes: `MALFORMED_SECTION`, `WRONG_HEADING_LEVEL`, `UNCLOSED_FENCE`, `ORPHAN_SUBSECTION`, `NUMBERING_GAP`, `MALFORMED_TAG`, `TAG_CONFLICT` are errors; `MIXED_PREFIX` is a warning. Warnings do not affect the exit code.
 
 ### Common Options
 

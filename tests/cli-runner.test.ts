@@ -164,7 +164,9 @@ describe('cli-runner', () => {
   describe('help text for proforma', () => {
     it('documents heading tags in check help', () => {
       expect(SUBCOMMAND_USAGE.check).toContain('[PROFORMA]');
-      expect(SUBCOMMAND_USAGE.check).toContain('TAG_CONFLICT');
+      expect(SUBCOMMAND_USAGE.check).toContain(
+        '[IMPORTANT] heading under a [PROFORMA] ancestor (TAG_CONFLICT'
+      );
     });
 
     it('documents the proforma field in list-sections help', () => {

@@ -19,14 +19,14 @@ const CODE_FENCE_PATTERN = /^(`{3,})(\S*)/;
 
 /**
  * True for a bracketed token whose normalized inner text starts with `stem`
- * and is at most 12 characters. Normalizing lowercases and drops whitespace,
- * `-`, and `_`, so `[Pro Forma]` and `[PRO-FORMA]` read as `proforma`.
+ * and is at most 12 characters. The `proform` stem normalizes by lowercasing
+ * and dropping whitespace, `-`, and `_`, so `[Pro Forma]` and `[PRO-FORMA]`
+ * read as `proforma`; other stems only trim and lowercase.
  */
 function isTagNearMiss(token: string, stem: string): boolean {
-  const inner = /^\[([^\]]*)\]$/
-    .exec(token)?.[1]
-    .toLowerCase()
-    .replace(/[\s_-]/g, '');
+  const raw = /^\[([^\]]*)\]$/.exec(token)?.[1];
+  const inner =
+    stem === 'proform' ? raw?.toLowerCase().replace(/[\s_-]/g, '') : raw?.trim().toLowerCase();
   return inner !== undefined && inner.startsWith(stem) && inner.length <= 12;
 }
 

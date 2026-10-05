@@ -45,6 +45,13 @@ describe('checker', () => {
       }
     });
 
+    it('should not flag [Import Export] as a malformed tag', () => {
+      for (const title of ['[Import Export] Title']) {
+        const result = checkPolicyContent(`## {§PY.1} ${title}\n`);
+        expect(result.issues.filter((i) => i.code === 'MALFORMED_TAG')).toHaveLength(0);
+      }
+    });
+
     it('should accept a bracketed title that does not read as important', () => {
       for (const title of ['[Deprecated] Title', '[link](url) Title']) {
         const result = checkPolicyContent(`## {§PY.1} ${title}\n`);
