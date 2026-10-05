@@ -50,7 +50,7 @@ Diagnostics go to `console.error` only; stdout is reserved for JSON-RPC frames, 
 
 CLI exits `0` on success (including `--help` and no references found) and `1` on any failure. See `conduct/policies/policy-domain-cli.md` §CLI.4.
 
-The hook fails open (allow) on hook, config, or index faults. It denies only when referenced policies fail to resolve, digest rendering fails, or `policy-mode` is unrecognised. See `conduct/policies/policy-domain-cli.md` §CLI.8.
+The hook fails open (allow) on hook, config, or index faults. It denies only when referenced policies fail to resolve, digest rendering fails, a section tag lookup fails, or `policy-mode` is unrecognised. See `conduct/policies/policy-domain-cli.md` §CLI.8.
 
 Relative imports use `.js`; Node builtins are `import * as fs from 'fs'` (no `node:`).
 
@@ -73,6 +73,7 @@ Tool handlers throw `Error` (never `isError`); validate args with hand-written `
 - Response chunking at section boundaries (10000 token limit, MCP `fetch_policies` only)
 - File watching and lazy index rebuild apply to the MCP server only; hook and CLI rebuild the index per invocation
 - `[IMPORTANT]` after a heading's `}` marks a section and its nested subsections important; hook `--mode digest` lists sections down to `--digest-depth` as one-line digests and injects full text only for important ones (full mode is the default)
+- `[PROFORMA]` after a heading's `}` marks a section and its nested subsections proforma; it is mutually exclusive with `[IMPORTANT]` (`TAG_CONFLICT`/`MALFORMED_TAG` in `check`), overrides `[IMPORTANT]` at any depth, and the hook never injects it in either mode; `fetch_policies` and `policy-cli fetch-policies` still return it
 - Hook injection puts `<policies>` before `<task>` so the policy prefix stays cacheable.
 - `llms.txt` at the root mirrors the tool surface; update it when tools, subcommands, or notation change
 - Adding a subcommand, tool, or binary follows a multi-file checklist: `conduct/policies/policy-domain-cli.md` §CLI.7, `conduct/policies/policy-domain-mcp-server.md` §MCP.8, `conduct/policies/policy-domain-library.md` §LIB.7

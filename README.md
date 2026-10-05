@@ -209,7 +209,7 @@ A prefix-only reference fails when the prefix matches no section, or when any se
 
 ### Per-Agent Injection Mode
 
-By default the hook injects the full text of every referenced section. Add `policy-mode` to an agent's frontmatter to choose a different mode for that agent:
+By default the hook injects the full text of every referenced section except `[PROFORMA]` sections. Add `policy-mode` to an agent's frontmatter to choose a different mode for that agent:
 
 ```markdown
 ---
@@ -223,10 +223,11 @@ Required policies: §DESIGN, §API
 
 | Value | Effect |
 |-------|--------|
-| `full` | Inject the full text of every referenced section |
-| `digest` | Inject one line per section, plus the full text of `[IMPORTANT]` sections |
+| `full` | Inject the full text of every referenced non-proforma section |
+| `digest` | Inject one line per non-proforma section, plus the full text of `[IMPORTANT]` sections |
 | `digest-minimal` | Same as `digest`, with each line limited to the section id and title |
 
+- Sections tagged `[PROFORMA]` (and their nested subsections) are skipped in every hook mode; `fetch-policies` still returns them.
 - The agent's `policy-mode` overrides the hook's `--mode` and `--digest-minimal` flags. Without the key, the flags apply, then `full`.
 - `--digest-depth`, `--digest-line-chars`, and `--fetch-instructions` still apply from the hook command.
 - An invalid value denies the Task call with a reason naming the agent file and the value.
@@ -303,7 +304,7 @@ policy-cli fetch-policies <file>        # Fetch policies for § refs in a file
 policy-cli validate-references <ref>... # Validate § refs exist (exit 1 if any invalid)
 policy-cli extract-references <file>    # Extract § refs from a file as JSON
 policy-cli list-sources                 # List available policy files and prefixes
-policy-cli list-sections                # List every section as JSON (id, file, bytes, refs, important)
+policy-cli list-sections                # List every section as JSON (id, file, bytes, refs, important, proforma)
 policy-cli resolve-references <ref>...  # Map § refs to source files
 policy-cli check <file>                 # Lint a policy file (exit 1 on format errors)
 ```

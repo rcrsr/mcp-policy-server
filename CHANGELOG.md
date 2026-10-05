@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`[PROFORMA]` tag:** A heading tagged `[PROFORMA]` marks boilerplate the hook never injects, in either `full` or `digest` mode. The tag covers the section's nested subsections and overrides `[IMPORTANT]` at any depth. `list-sections` reports a `proforma` field, and `check` reports `[IMPORTANT]` under a `[PROFORMA]` ancestor as `TAG_CONFLICT`. `fetch-policies` and `fetch_policies` still return proforma text.
+
+### Changed
+
+- **Full mode tag lookup:** Full mode now reads the policy files for section tags, so it denies with `Policy resolution failed:` when they cannot be re-read.
+
 ## [0.8.3] - 2026-10-01
 
 ### Added

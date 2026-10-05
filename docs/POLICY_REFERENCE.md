@@ -67,7 +67,23 @@ Mark a section as important by adding exactly `[IMPORTANT]` after the closing br
 - A tagged section makes every nested subsection important (`§PREFIX.1.1`, `§PREFIX.1.1.1`, ...). A tag on a subsection affects only that subsection and its descendants, not its parent or siblings.
 - The tag does not change section extraction or stopping rules.
 - Any other bracketed token directly after `}` that reads as important or is a near-miss typo (inner text starts with `import`, at most 12 characters: `[important]`, `[IMPORTANT ]`, `[IMPORTANTT]`, `[IMPORTENT]`) is a `MALFORMED_TAG` error in `policy-cli check`, as is `[` inside the braces and `[IMPORTANT]` (any case) later in the title. The tag must come directly after the brace, followed by a space.
-- `policy-cli list-sections` reports `important` for each section. In hook `--mode digest`, important sections are injected in full and all others as one-line digests.
+- `policy-cli list-sections` reports `important` for each section. In hook `--mode digest`, important sections are injected in full and all others as one-line digests. Proforma sections are skipped (see Proforma Tag).
+
+## Proforma Tag
+
+Mark a section as proforma (boilerplate the hook never injects) by adding exactly `[PROFORMA]` after the closing brace, separated by one space:
+
+```markdown
+## {§PREFIX.2} [PROFORMA] Title
+```
+
+- Grammar matches `[IMPORTANT]`: uppercase, one space after the brace, optional title after it. A heading carries at most one tag; `[IMPORTANT]` and `[PROFORMA]` are mutually exclusive.
+- A proforma section covers its whole subtree: every nested subsection (`§PREFIX.2.1`, `§PREFIX.2.1.1`, ...) is proforma. A tag on a subsection affects only that subsection and its descendants.
+- Proforma overrides `[IMPORTANT]` at any depth. There is no "nearest tag wins" and an important child of a proforma section is not promoted. `policy-cli check` reports an `[IMPORTANT]` heading under a `[PROFORMA]` ancestor as a `TAG_CONFLICT` error, since the important tag would have no effect.
+- Near-miss rule: a bracketed token directly after `}` whose inner text, lowercased with whitespace, `-`, and `_` removed, starts with `proform` and is at most 12 characters (`[proforma]`, `[PRO-FORMA]`, `[Pro Forma]`, `[PROFORMAA]`) is a `MALFORMED_TAG` error, as are both tags on one heading (either order) and a tag later in the title.
+- The hook skips proforma sections in both `full` and `digest` mode: no digest line and no full text. When every resolved section is proforma, the hook allows the call without injecting anything.
+- `policy-cli fetch-policies` and the MCP `fetch_policies` tool are unchanged and still return proforma text. § references inside proforma text are still followed during resolution.
+- `policy-cli list-sections` reports `proforma` for each section; a proforma section is never reported `important`.
 
 ## Range Notation
 

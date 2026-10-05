@@ -68,7 +68,7 @@ Subcommands:
   validate-references Validate that § references exist and are unique
   extract-references  Extract § references from a file
   list-sources        List available policy files and section prefixes
-  list-sections       List per-section detail (id, prefix, file, byteLength, refs, important) as JSON
+  list-sections       List per-section detail (id, prefix, file, byteLength, refs, important, proforma) as JSON
   resolve-references  Map § references to their source files
   check               Validate policy file format (sections, numbering, fencing)
 
@@ -153,11 +153,13 @@ Example:
   'list-sections': `
 Usage: policy-cli list-sections [options]
 
-List per-section detail (id, prefix, file, byteLength, refs, important) as JSON.
+List per-section detail (id, prefix, file, byteLength, refs, important, proforma) as JSON.
 
 Each record's refs field is that section's outbound § references, computed
 with the same fence/inline-code exclusion extract-references applies.
 Each record's important field is true when the section is tagged [IMPORTANT] or inherits the tag from a parent section.
+Each record's proforma field is true when the section is tagged [PROFORMA] or inherits the tag from a parent section.
+A proforma section is never reported as important.
 
 Options:
   -c, --config <path>  Path to policies.json or glob pattern
@@ -188,7 +190,9 @@ Validate policy file format including sections, numbering, and code fencing.
 
 Checks performed:
   - Section header format ({§PREFIX.NUMBER})
-  - Important tag syntax (MALFORMED_TAG is an error)
+  - Heading tag syntax: a heading may carry one tag, [IMPORTANT] or [PROFORMA],
+    directly after the closing brace (MALFORMED_TAG is an error)
+  - Both tags on one heading (TAG_CONFLICT is an error)
   - Heading level correctness (## for sections, ### for subsections)
   - Code fence matching (all opened blocks closed)
   - Orphan subsections (subsections without parent section)

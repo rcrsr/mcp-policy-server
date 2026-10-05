@@ -4,6 +4,7 @@
  */
 
 import * as path from 'path';
+import { parseSectionHeading } from '../src/parser';
 import { checkPolicyFile, checkPolicyContent, formatCheckResult } from '../src/checker';
 
 // Fixture directory path (absolute)
@@ -73,7 +74,10 @@ describe('checker', () => {
 
       expect(result.valid).toBe(false);
       expect(result.issues).toHaveLength(1);
-      expect(result.issues[0]).toMatchObject({ severity: 'error', code: 'MALFORMED_TAG' });
+      expect(result.issues[0]).toMatchObject({
+        severity: 'error',
+        code: 'MALFORMED_TAG',
+      });
     });
 
     it('should accept a correctly tagged heading and still count it for numbering', () => {
@@ -82,6 +86,151 @@ describe('checker', () => {
       expect(ok.issues).toHaveLength(0);
 
       const gap = checkPolicyContent('## {§PY.1} A\n\n## {§PY.3} [IMPORTANT] C\n');
+      expect(gap.issues.map((i) => i.code)).toEqual(['NUMBERING_GAP']);
+    });
+
+    it.each([
+      '## {§PY.1} [IMPORTANT] [PROFORMA] Title',
+      '## {§PY.1} [PROFORMA] [IMPORTANT] Title',
+      '## {§PY.1} [PROFORMA] Title [IMPORTANT]',
+      '## {§PY.1} [IMPORTANT] Title [proforma]',
+      '## {§PY.1} Title [PROFORMA]',
+      '## {§PY.1} [Deprecated] [proforma]',
+      '## {§PY.1} [PROFORMA] Title [PROFORMA]',
+      '## {§PY.1} [proforma] Title',
+      '## {§PY.1} [PROFORMA ] Title',
+      '## {§PY.1} [ PROFORMA ] Title',
+      '## {§PY.1} [PROFORM] Title',
+      '## {§PY.1} [PROFORMAA] Title',
+      '## {§PY.1} [PROFORMAAAAA] Title',
+      '## {§PY.1} [PRO-FORMA] Title',
+      '## {§PY.1} [Pro Forma] Title',
+      '## {§PY.1}[PROFORMA] Title',
+      '## {§PY.1 [PROFORMA]} Title',
+    ])('should report MALFORMED_TAG once for %s', (heading) => {
+      const result = checkPolicyContent(`${heading}\n`);
+      expect(result.valid).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0]).toMatchObject({
+        severity: 'error',
+        code: 'MALFORMED_TAG',
+      });
+    });
+
+    it('should report exactly one issue for a doubly tagged heading under a proforma ancestor', () => {
+      const result = checkPolicyContent(
+        '## {§PY.1} [PROFORMA] A\n\n### {§PY.1.1} [IMPORTANT] [PROFORMA] B\n'
+      );
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].code).toBe('MALFORMED_TAG');
+    });
+
+    it.each([
+      '## {§PY.1} [IMPORTANT] [PROFORMA] Title',
+      '## {§PY.1} [PROFORMA] [IMPORTANT] Title',
+      '## {§PY.1} [PROFORMA] Title [IMPORTANT]',
+      '## {§PY.1} [IMPORTANT] Title [proforma]',
+      '## {§PY.1} [PROFORMA] Title [PROFORMA]',
+      '## {§PY.1} [proforma] Title',
+      '## {§PY.1} [PROFORMAA] Title',
+      '## {§PY.1}[PROFORMA] Title',
+      '## {§PY.1} [IMPORTANT] [IMPORTANT] T',
+    ])('should agree with parseSectionHeading: %s is flagged and parses with no tag', (heading) => {
+      const codes = checkPolicyContent(`${heading}\n`).issues.map((i) => i.code);
+      expect(codes).toEqual(['MALFORMED_TAG']);
+      expect(parseSectionHeading(heading)?.tag ?? null).toBeNull();
+    });
+
+    it('should name both tags for mutual exclusion and brackets inside braces', () => {
+      const both = checkPolicyContent('## {§PY.1} [IMPORTANT] [PROFORMA] T\n');
+      expect(both.issues[0].message).toContain('[IMPORTANT]');
+      expect(both.issues[0].message).toContain('[PROFORMA]');
+      expect(both.issues[0].message).toContain('mutually exclusive');
+
+      const reversed = checkPolicyContent('## {§PY.1} [PROFORMA] [IMPORTANT] T\n');
+      expect(reversed.issues[0].message).toContain('mutually exclusive');
+
+      const inside = checkPolicyContent('## {§PY.1 [PROFORMA]} T\n');
+      expect(inside.issues[0].message).toContain('[IMPORTANT]');
+      expect(inside.issues[0].message).toContain('[PROFORMA]');
+    });
+
+    it('should accept proforma headings and unrelated bracketed titles', () => {
+      for (const heading of [
+        '## {§PY.1} [PROFORMA] T',
+        '## {§PY.1} [PROFORMA]',
+        '## {§PY.1} [PROFORMAAAAAA] T',
+        '## {§PY.1} [Proposed] T',
+        '## {§PY.1} [Professional] T',
+        '## {§PY.1} [Profile] T',
+        '## {§PY.1} [Deprecated] T',
+        '## {§PY.1} [link](url) T',
+      ]) {
+        const result = checkPolicyContent(`${heading}\n`);
+        expect(result.issues).toEqual([]);
+        expect(result.valid).toBe(true);
+      }
+    });
+
+    it('should never flag a heading the parser tags, and parse unflagged bracket titles with no tag', () => {
+      expect(parseSectionHeading('## {§PY.1} [PROFORMA] T')?.tag).toBe('proforma');
+      expect(parseSectionHeading('## {§PY.1} [PROFORMA]')?.tag).toBe('proforma');
+      for (const heading of ['## {§PY.1} [PROFORMA] T', '## {§PY.1} [PROFORMA]']) {
+        expect(checkPolicyContent(`${heading}\n`).issues).toEqual([]);
+      }
+      for (const heading of [
+        '## {§PY.1} [Proposed] T',
+        '## {§PY.1} [Professional] T',
+        '## {§PY.1} [Profile] T',
+        '## {§PY.1} [Deprecated] T',
+        '## {§PY.1} [link](url) T',
+      ]) {
+        expect(parseSectionHeading(heading)?.tag ?? null).toBeNull();
+      }
+    });
+
+    it('should report TAG_CONFLICT for an important heading under a proforma ancestor', () => {
+      const cases = [
+        {
+          content: '## {§PY.1} A\n\n## {§PY.2} [PROFORMA] B\n\n### {§PY.2.1} [IMPORTANT] C\n',
+          line: 5,
+        },
+        {
+          content:
+            '## {§PY.1} A\n\n## {§PY.2} [PROFORMA] B\n\n### {§PY.2.1} B1\n\n#### {§PY.2.1.1} [IMPORTANT] C\n',
+          line: 7,
+        },
+      ];
+      for (const { content, line } of cases) {
+        const result = checkPolicyContent(content);
+        expect(result.valid).toBe(false);
+        expect(result.issues).toHaveLength(1);
+        expect(result.issues[0]).toMatchObject({
+          line,
+          severity: 'error',
+          code: 'TAG_CONFLICT',
+        });
+        expect(result.issues[0].message).toContain('§PY.2');
+      }
+      const deep = checkPolicyContent(
+        '## {§PY.1} A\n\n## {§PY.2} [PROFORMA] B\n\n### {§PY.2.1} B1\n\n#### {§PY.2.1.1} [IMPORTANT] C\n'
+      );
+      expect(deep.issues[0].message).toContain('§PY.2.1.1');
+    });
+
+    it('should accept an important parent with a proforma child', () => {
+      const result = checkPolicyContent('## {§PY.1} [IMPORTANT] A\n\n### {§PY.1.1} [PROFORMA] B\n');
+      expect(result.valid).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it('should ignore proforma conflicts inside code fences and still count numbering', () => {
+      const fenced = checkPolicyContent(
+        '## {§PY.1} [PROFORMA] A\n\n```md\n### {§PY.1.1} [IMPORTANT] B\n## {§PY.2} [PROFORMA ] C\n```\n'
+      );
+      expect(fenced.issues).toHaveLength(0);
+
+      const gap = checkPolicyContent('## {§PY.1} A\n\n## {§PY.3} [PROFORMA] C\n');
       expect(gap.issues.map((i) => i.code)).toEqual(['NUMBERING_GAP']);
     });
 

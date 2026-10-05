@@ -4,8 +4,8 @@
  */
 
 import * as fs from 'fs';
-import { CheckIssue, CheckResult } from './types.js';
-import { IMPORTANT_TAG } from './parser.js';
+import { CheckIssue, CheckResult, SectionTag } from './types.js';
+import { IMPORTANT_TAG, PROFORMA_TAG, parseSectionHeading } from './parser.js';
 
 // Section header pattern: ## {§PREFIX.NUMBER} or ### {§PREFIX.NUMBER.SUBSECTION}
 const SECTION_HEADER_PATTERN =
@@ -17,19 +17,29 @@ const MALFORMED_SECTION_PATTERN = /^(#{2,})\s*\{§/;
 // Code fence pattern (captures backtick count and optional language)
 const CODE_FENCE_PATTERN = /^(`{3,})(\S*)/;
 
-/** True for a bracketed token whose inner text starts with `import` and is at most 12 characters */
-function isImportantNearMiss(token: string): boolean {
-  const inner = /^\[([^\]]*)\]$/.exec(token)?.[1].trim().toLowerCase();
-  return inner !== undefined && inner.startsWith('import') && inner.length <= 12;
+/**
+ * True for a bracketed token whose normalized inner text starts with `stem`
+ * and is at most 12 characters. Normalizing lowercases and drops whitespace,
+ * `-`, and `_`, so `[Pro Forma]` and `[PRO-FORMA]` read as `proforma`.
+ */
+function isTagNearMiss(token: string, stem: string): boolean {
+  const inner = /^\[([^\]]*)\]$/
+    .exec(token)?.[1]
+    .toLowerCase()
+    .replace(/[\s_-]/g, '');
+  return inner !== undefined && inner.startsWith(stem) && inner.length <= 12;
 }
 
 /**
- * Find a malformed importance tag on a § heading line
+ * Find a malformed heading tag on a § heading line
  *
- * Covers brackets inside the braces, a bracketed token after the closing brace
- * that reads as important or is a near-miss typo (inner text starts with
- * `import`, at most 12 characters, e.g. `[IMPORTANTT]`, `[IMPORTENT]`) but is
- * not exactly ` [IMPORTANT]`, and `[IMPORTANT]` (any case) in the title. Other
+ * Tag syntax: exactly one of ` [IMPORTANT]` or ` [PROFORMA]` (uppercase, one
+ * space after the closing brace, before the title); the two are mutually
+ * exclusive. Reported as malformed: brackets inside the braces, both tags on
+ * one heading in either order, a bracketed token after the closing brace that
+ * is a near-miss typo of a tag (normalized inner text starts with `import` or
+ * `proform`, at most 12 characters, e.g. `[IMPORTANTT]`, `[PRO-FORMA]`) but is
+ * not exactly the tag, and a tag (any case) elsewhere in the title. Other
  * bracketed titles such as `[Deprecated]` or `[link](url)` are left alone.
  *
  * @returns Error message, or null when the tags are well-formed
@@ -40,24 +50,64 @@ function findMalformedTag(line: string): string | null {
   if (close === -1) return null;
 
   if (line.slice(open, close).includes('[')) {
-    return `Malformed tag: brackets are not allowed inside the braces. Place ${IMPORTANT_TAG} after the closing brace, e.g. ## {§PREFIX.NUMBER} ${IMPORTANT_TAG} Title`;
+    return `Malformed tag: brackets are not allowed inside the braces. Place ${IMPORTANT_TAG} or ${PROFORMA_TAG} after the closing brace, e.g. ## {§PREFIX.NUMBER} ${IMPORTANT_TAG} Title`;
   }
 
   let rest = line.slice(close + 1);
+  let exactTag: string | null = null;
   const bracketed = /^\s*\[[^\]]*\]/.exec(rest);
   if (bracketed) {
-    const exact =
-      rest.startsWith(` ${IMPORTANT_TAG}`) && /^\s|^$/.test(rest.slice(1 + IMPORTANT_TAG.length));
-    if (!exact && isImportantNearMiss(bracketed[0].trim())) {
-      return `Malformed tag "${bracketed[0].trim()}" after the closing brace. Only exactly ${IMPORTANT_TAG} (uppercase, one space after the brace) is allowed`;
+    for (const tag of [IMPORTANT_TAG, PROFORMA_TAG]) {
+      if (rest.startsWith(` ${tag}`) && /^\s|^$/.test(rest.slice(1 + tag.length))) {
+        exactTag = tag;
+      }
     }
-    if (exact) rest = rest.slice(1 + IMPORTANT_TAG.length);
+    const token = bracketed[0].trim();
+    if (!exactTag && (isTagNearMiss(token, 'import') || isTagNearMiss(token, 'proform'))) {
+      return `Malformed tag "${token}" after the closing brace. Only exactly ${IMPORTANT_TAG} or ${PROFORMA_TAG} (uppercase, one space after the brace) is allowed`;
+    }
+    if (exactTag) rest = rest.slice(1 + exactTag.length);
   }
 
-  if (/\[important\]/i.test(rest)) {
-    return `Malformed tag: ${IMPORTANT_TAG} must appear directly after the closing brace, once, before the title`;
+  const hasImportant = exactTag === IMPORTANT_TAG || /\[important\]/i.test(rest);
+  const hasProforma = exactTag === PROFORMA_TAG || /\[proforma\]/i.test(rest);
+  if (hasImportant && hasProforma) {
+    return `Malformed tag: ${IMPORTANT_TAG} and ${PROFORMA_TAG} are mutually exclusive on one heading`;
+  }
+  if (/\[(?:important|proforma)\]/i.test(rest)) {
+    return `Malformed tag: ${IMPORTANT_TAG} or ${PROFORMA_TAG} must appear directly after the closing brace, once, before the title`;
   }
   return null;
+}
+
+/**
+ * Report each [IMPORTANT] heading that has a numeric ancestor tagged [PROFORMA]
+ *
+ * Proforma overrides important, so such an important tag would be dead.
+ */
+function checkTagConflicts(
+  tagged: Array<{ line: number; id: string; tag: SectionTag }>,
+  issues: CheckIssue[]
+): void {
+  const proformaIds = new Set(tagged.filter((t) => t.tag === 'proforma').map((t) => t.id));
+  if (proformaIds.size === 0) return;
+
+  for (const heading of tagged) {
+    if (heading.tag !== 'important') continue;
+    let ancestor = heading.id;
+    while (ancestor.includes('.')) {
+      ancestor = ancestor.substring(0, ancestor.lastIndexOf('.'));
+      if (proformaIds.has(ancestor)) {
+        issues.push({
+          line: heading.line,
+          severity: 'error',
+          code: 'TAG_CONFLICT',
+          message: `${heading.id} is tagged ${IMPORTANT_TAG} but its ancestor ${ancestor} is tagged ${PROFORMA_TAG}; proforma overrides important, so the ${IMPORTANT_TAG} tag has no effect`,
+        });
+        break;
+      }
+    }
+  }
 }
 
 /**
@@ -69,6 +119,7 @@ function findMalformedTag(line: string): string | null {
  * - Code fence matching (all opened blocks are closed)
  * - Heading level appropriateness (## for whole sections, ### for subsections)
  * - Orphan subsections (subsections without parent)
+ * - Heading tags ([IMPORTANT] / [PROFORMA], mutually exclusive, and no [IMPORTANT] under a [PROFORMA] ancestor)
  *
  * @param filePath - Absolute path to policy markdown file
  * @returns Check result with issues and statistics
@@ -106,6 +157,7 @@ export function checkPolicyContent(content: string): CheckResult {
     number: string;
     depth: number;
   }> = [];
+  const tagged: Array<{ line: number; id: string; tag: SectionTag }> = [];
   let detectedPrefix: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -138,6 +190,7 @@ export function checkPolicyContent(content: string): CheckResult {
     }
 
     // Check for malformed importance tags (replaces the generic malformed-section issue)
+    let tagMalformed = false;
     if (MALFORMED_SECTION_PATTERN.test(line)) {
       const tagMessage = findMalformedTag(line);
       if (tagMessage) {
@@ -147,6 +200,7 @@ export function checkPolicyContent(content: string): CheckResult {
           code: 'MALFORMED_TAG',
           message: tagMessage,
         });
+        tagMalformed = true;
         if (!SECTION_HEADER_PATTERN.test(line)) continue;
       }
     }
@@ -204,6 +258,10 @@ export function checkPolicyContent(content: string): CheckResult {
       }
 
       sections.push({ line: lineNum, prefix, number, depth });
+
+      // A heading already reported as MALFORMED_TAG must not also feed TAG_CONFLICT
+      const heading = tagMalformed ? null : parseSectionHeading(line);
+      if (heading?.tag) tagged.push({ line: lineNum, id: heading.id, tag: heading.tag });
     }
   }
 
@@ -219,6 +277,9 @@ export function checkPolicyContent(content: string): CheckResult {
 
   // Check for orphan subsections (subsection without parent)
   checkOrphanSubsections(sections, issues);
+
+  // Check for [IMPORTANT] headings nested under [PROFORMA] ancestors
+  checkTagConflicts(tagged, issues);
 
   // Check for non-sequential numbering (warning only)
   checkNumberingSequence(sections, issues);

@@ -3,6 +3,7 @@
  */
 import {
   buildSectionIndex,
+  findTaggedSections,
   buildSectionDetails,
   ensureFreshIndex,
   initializeIndexState,
@@ -533,12 +534,12 @@ describe('buildSectionDetails important flag', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  function detailsFor(lines: string[]): Map<string, boolean> {
+  function detailsFor(lines: string[]): Map<string, { important: boolean; proforma: boolean }> {
     fs.mkdirSync(testDir, { recursive: true });
     fs.writeFileSync(testFile, lines.join('\n'));
     const index = buildSectionIndex({ files: [testFile], baseDir: testDir, maxChunkTokens: 10000 });
     const { details } = buildSectionDetails(index, testDir);
-    return new Map(details.map((d) => [d.id, d.important]));
+    return new Map(details.map((d) => [d.id, { important: d.important, proforma: d.proforma }]));
   }
 
   test('tagged parent marks the parent and every child important; untagged sibling is not', () => {
@@ -553,10 +554,10 @@ describe('buildSectionDetails important flag', () => {
       'Body.',
     ]);
 
-    expect(flags.get('§IMP.1')).toBe(true);
-    expect(flags.get('§IMP.1.1')).toBe(true);
-    expect(flags.get('§IMP.1.2')).toBe(true);
-    expect(flags.get('§IMP.2')).toBe(false);
+    expect(flags.get('§IMP.1')?.important).toBe(true);
+    expect(flags.get('§IMP.1.1')?.important).toBe(true);
+    expect(flags.get('§IMP.1.2')?.important).toBe(true);
+    expect(flags.get('§IMP.2')?.important).toBe(false);
   });
 
   test('tagged child under an untagged parent is important only for that child', () => {
@@ -569,9 +570,9 @@ describe('buildSectionDetails important flag', () => {
       'Sibling body.',
     ]);
 
-    expect(flags.get('§IMP.1')).toBe(false);
-    expect(flags.get('§IMP.1.1')).toBe(true);
-    expect(flags.get('§IMP.1.2')).toBe(false);
+    expect(flags.get('§IMP.1')?.important).toBe(false);
+    expect(flags.get('§IMP.1.1')?.important).toBe(true);
+    expect(flags.get('§IMP.1.2')?.important).toBe(false);
   });
 
   test('tagged parent marks deeper descendants important', () => {
@@ -584,7 +585,7 @@ describe('buildSectionDetails important flag', () => {
       'Grandchild body.',
     ]);
 
-    expect(flags.get('§IMP.1.1.1')).toBe(true);
+    expect(flags.get('§IMP.1.1.1')?.important).toBe(true);
   });
 
   test('tagged middle section marks its grandchild important but not its untagged ancestor or sibling', () => {
@@ -599,8 +600,73 @@ describe('buildSectionDetails important flag', () => {
       'Sibling body.',
     ]);
 
-    expect(flags.get('§IMP.1.1.1')).toBe(true);
-    expect(flags.get('§IMP.1')).toBe(false);
-    expect(flags.get('§IMP.1.2')).toBe(false);
+    expect(flags.get('§IMP.1.1.1')?.important).toBe(true);
+    expect(flags.get('§IMP.1')?.important).toBe(false);
+    expect(flags.get('§IMP.1.2')?.important).toBe(false);
+  });
+
+  test('proforma parent marks itself and every descendant proforma and not important', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} [PROFORMA] Proforma',
+      'Body.',
+      '### {§IMP.1.1} Child',
+      'Child body.',
+      '### {§IMP.1.1.1} Grandchild',
+      'Grandchild body.',
+      '## {§IMP.2} Untagged',
+      'Body.',
+    ]);
+
+    for (const id of ['§IMP.1', '§IMP.1.1', '§IMP.1.1.1']) {
+      expect(flags.get(id)).toEqual({ important: false, proforma: true });
+    }
+    expect(flags.get('§IMP.2')).toEqual({ important: false, proforma: false });
+  });
+
+  test('proforma child under an important parent is proforma only; siblings stay important', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} [IMPORTANT] Important parent',
+      'Body.',
+      '### {§IMP.1.1} [PROFORMA] Proforma child',
+      'Child body.',
+      '### {§IMP.1.2} Sibling',
+      'Sibling body.',
+    ]);
+
+    expect(flags.get('§IMP.1')).toEqual({ important: true, proforma: false });
+    expect(flags.get('§IMP.1.1')).toEqual({ important: false, proforma: true });
+    expect(flags.get('§IMP.1.2')).toEqual({ important: true, proforma: false });
+  });
+
+  test('important child under a proforma parent is not important', () => {
+    const flags = detailsFor([
+      '## {§IMP.1} [PROFORMA] Proforma parent',
+      'Body.',
+      '### {§IMP.1.1} [IMPORTANT] Important child',
+      'Child body.',
+    ]);
+
+    expect(flags.get('§IMP.1.1')).toEqual({ important: false, proforma: true });
+  });
+
+  test('file mixing both tags keeps each tag set holding only its own ids', () => {
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      testFile,
+      [
+        '## {§IMP.1} [IMPORTANT] Important',
+        'Body.',
+        '## {§IMP.2} [PROFORMA] Proforma',
+        'Body.',
+        '## {§IMP.3} Untagged',
+        'Body.',
+      ].join('\n')
+    );
+    const index = buildSectionIndex({ files: [testFile], baseDir: testDir, maxChunkTokens: 10000 });
+
+    const tagged = findTaggedSections(['§IMP.1', '§IMP.2', '§IMP.3'], index);
+
+    expect(Array.from(tagged.important)).toEqual(['§IMP.1']);
+    expect(Array.from(tagged.proforma)).toEqual(['§IMP.2']);
   });
 });

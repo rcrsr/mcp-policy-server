@@ -82,7 +82,7 @@ Configure hooks in your project's `.claude/settings.json`.
 | `-c, --config <value>` | No | Glob pattern, `policies.json` path, or inline JSON (see Default Discovery below) |
 | `-a, --agents-dir <path>` | No | Agent files directory (can be specified multiple times; see Default Discovery below) |
 | `-d, --debug <file>` | No | Append a trace of each run to `<file>` for troubleshooting |
-| `--mode <digest\|full>` | No | `full` (default) injects all referenced policy text. `digest` injects a digest block, then the full text of `[IMPORTANT]` sections, then a footer |
+| `--mode <digest\|full>` | No | `full` (default) injects all referenced policy text except `[PROFORMA]` sections (see the note below). `digest` injects a digest block, then the full text of `[IMPORTANT]` sections, then a footer |
 | `--digest-depth <n>` | No | Deepest nested section level listed in the digest (default 2, minimum 2; `§D.4` is level 1, `§D.4.1` is level 2). Nested sections tagged important are listed even when deeper |
 | `--digest-line-chars <n>` | No | Maximum characters per digest line, excluding the full-text marker (default 200) |
 | `--digest-minimal` | No | Every digest line shows only `§ID Title`, with no body sentence |
@@ -97,7 +97,7 @@ Digest flags are accepted and ignored in full mode. An invalid flag or value exi
 2. Full-text block: only the `[IMPORTANT]` sections (including important nested sections).
 3. Footer: by default, a statement that the content above is a digest and how to fetch full text: `policy-cli fetch-policies --config '<absolute active config>' §ID ...`. The `--config '...'` part is omitted when no config value is in effect, and an inline JSON config is quoted as given, not made absolute. Use `--fetch-instructions` to replace it.
 
-Full mode output is unchanged by these options.
+Full mode output is unchanged by these options. Both modes omit `[PROFORMA]` sections (and their nested subsections): they get no digest line and no full text. `policy-cli fetch-policies` still returns them. If the policy files cannot be re-read to look up section tags, the hook denies with `Policy resolution failed:` in both modes.
 
 `policy-fetch` remains as an alias for `policy-hook`. The `--hook` flag and positional arguments are accepted and ignored for backwards compatibility.
 
@@ -185,7 +185,7 @@ Your agent instructions here...
 
 | Value | Effect |
 |-------|--------|
-| `full` | Inject full text of every referenced section |
+| `full` | Inject full text of every referenced non-proforma section |
 | `digest` | Digest mode, never title-only (overrides `--digest-minimal`) |
 | `digest-minimal` | Same as `--mode digest --digest-minimal` (title-only lines) |
 
@@ -306,7 +306,7 @@ The `policy-cli` binary provides subcommands for policy operations.
 | `validate-references <ref>...` | Validate that § references exist and are unique; prints JSON | Yes | Any reference is invalid |
 | `extract-references <file>` | Extract § references from a file as a sorted JSON array | No | File not found |
 | `list-sources` | List available policy files, index statistics, and prefixes | Yes | Config error |
-| `list-sections` | List every section as JSON: `id`, `prefix`, `file`, `byteLength`, `refs`, `important` | Yes | Any section could not be read |
+| `list-sections` | List every section as JSON: `id`, `prefix`, `file`, `byteLength`, `refs`, `important`, `proforma` | Yes | Any section could not be read |
 | `resolve-references <ref>...` | Map § references to source files as JSON | Yes | A reference fails to resolve |
 | `check <file>` | Lint one policy file: header format, heading levels, code fences, orphan subsections, numbering gaps | No | Any error-level issue |
 

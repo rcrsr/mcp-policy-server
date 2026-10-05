@@ -15,7 +15,9 @@ import {
   extractSectionFromLines,
   findEmbeddedReferences,
   isImportantSection,
+  isProformaSection,
   parseSectionHeading,
+  stripProformaSections,
 } from './parser.js';
 import { joinInventory, resolvePolicyInventory } from './operations.js';
 import { InventorySection, SectionIndex, SectionNotation } from './types.js';
@@ -612,6 +614,33 @@ function footerConfigValue(value: string | undefined): string | undefined {
 }
 
 /**
+ * Remove proforma sections from a resolved inventory
+ *
+ * Drops entries whose id is proforma (itself or by ancestor), strips proforma
+ * spans from the remaining entries' content, and drops entries left empty.
+ * Order and other fields are preserved; without proforma tags the result
+ * equals the input.
+ *
+ * @param inventory - Resolved sections in output order
+ * @param proforma - Ids of headings tagged proforma
+ * @returns Inventory without proforma text
+ */
+export function stripProformaInventory(
+  inventory: InventorySection[],
+  proforma: ReadonlySet<SectionNotation>
+): InventorySection[] {
+  if (proforma.size === 0) return inventory;
+  const stripped: InventorySection[] = [];
+  for (const entry of inventory) {
+    if (isProformaSection(entry.id, proforma)) continue;
+    const content = stripProformaSections(entry.content, proforma);
+    if (content.trim() === '') continue;
+    stripped.push({ ...entry, content });
+  }
+  return stripped;
+}
+
+/**
  * Run a call while console.error is muted
  */
 function withMutedStderr<T>(muted: boolean, fn: () => T): T {
@@ -632,7 +661,9 @@ function withMutedStderr<T>(muted: boolean, fn: () => T): T {
  *
  * Every early exit returns the plain allow response so the tool call is
  * never blocked by hook problems. A deny is only produced when the agent
- * references policies that fail to resolve.
+ * has an unrecognised policy-mode, references policies that fail to resolve,
+ * or the section tags or digest cannot be read or rendered. Sections tagged
+ * [PROFORMA] (including their subtrees) are never injected in either mode.
  *
  * @param rawInput - Raw JSON read from stdin
  * @param options - Run options
@@ -737,28 +768,40 @@ export function runHook(rawInput: string, options: HookRunOptions): HookOutput {
     return ALLOW_RESPONSE;
   }
 
-  log(`inventory: ${fetchResult.inventory.length} sections`);
-  log(`full text: ${fetchResult.content.length} chars`);
-
-  let injected = fetchResult.content;
-  if (resolved.mode === 'digest') {
-    let digest: PolicyDigest;
-    try {
-      const tagged = findTaggedSections(
-        fetchResult.inventory.map((section) => section.id),
-        index
-      );
-      digest = buildPolicyDigest(fetchResult.inventory, tagged, {
+  let inventory = fetchResult.inventory;
+  let digest: PolicyDigest | undefined;
+  try {
+    const tagged = findTaggedSections(
+      inventory.map((section) => section.id),
+      index
+    );
+    inventory = stripProformaInventory(inventory, tagged.proforma);
+    if (inventory.length > 0 && resolved.mode === 'digest') {
+      digest = buildPolicyDigest(inventory, tagged.important, {
         ...DEFAULT_DIGEST_OPTIONS,
         ...options.digest,
         minimal: resolved.minimal,
         configValue: footerConfigValue(effectiveConfigPath ?? env.policyConfigEnv),
       });
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      log(`BLOCK: ${error}`);
-      return denyResponse(`Policy resolution failed: ${error}`);
     }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    log(`BLOCK: ${error}`);
+    return denyResponse(`Policy resolution failed: ${error}`);
+  }
+
+  const skipped = fetchResult.inventory.length - inventory.length;
+  if (skipped > 0) log(`proforma: ${skipped} sections skipped`);
+  if (inventory.length === 0) {
+    log('EXIT: all resolved sections are proforma');
+    return ALLOW_RESPONSE;
+  }
+
+  log(`inventory: ${inventory.length} sections`);
+  let injected = joinInventory(inventory);
+  log(`full text: ${injected.length} chars`);
+
+  if (digest) {
     log(
       `digest: ${digest.text.length} chars (${digest.summarized} summarized, ${digest.full} full)`
     );
