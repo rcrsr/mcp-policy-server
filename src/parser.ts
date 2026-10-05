@@ -37,9 +37,15 @@ export const PREFIX_ONLY_PATTERN = /^§([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)$/;
 /** Tag marking a section heading as important, placed directly after the closing brace */
 export const IMPORTANT_TAG = '[IMPORTANT]';
 
-// Heading grammar: #{2,}, whitespace, {§ID}, optional " [IMPORTANT]", optional title
+/** Tag marking a section heading as proforma (never injected by the hook), placed directly after the closing brace */
+export const PROFORMA_TAG = '[PROFORMA]';
+
+// Heading grammar: #{2,}, whitespace, {§ID}, optional " [IMPORTANT]" or " [PROFORMA]", optional title
 const SECTION_HEADING_PATTERN =
-  /^(#{2,})\s+\{(§[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*\.\d+(?:\.\d+)*)\}( \[IMPORTANT\](?=\s|$))?(.*)$/;
+  /^(#{2,})\s+\{(§[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*\.\d+(?:\.\d+)*)\}(?: \[(IMPORTANT|PROFORMA)\](?=\s|$))?(.*)$/;
+
+// Any further tag (any case) after the leading one invalidates the heading's tag
+const DUPLICATE_TAG_PATTERN = /\[(?:IMPORTANT|PROFORMA)\]/i;
 
 // Sections are sorted alphabetically by prefix, then numerically by section number
 
@@ -492,7 +498,7 @@ export function sortSections(notations: SectionNotation[]): SectionNotation[] {
 /**
  * Parse a heading line of the form `## {§ID} [IMPORTANT] Title`
  *
- * The `[IMPORTANT]` tag is optional and must be uppercase, separated from the
+ * One `[IMPORTANT]` or `[PROFORMA]` tag is optional and must be uppercase, separated from the
  * closing brace by a single space. The returned title is trimmed and never
  * contains the tag. Lines that are not § headings return null.
  *
@@ -500,13 +506,26 @@ export function sortSections(notations: SectionNotation[]): SectionNotation[] {
  * @returns Parsed heading (lineIndex 0), or null for non-§ headings
  */
 export function parseSectionHeading(line: string): SectionHeading | null {
-  const match = SECTION_HEADING_PATTERN.exec(line.replace(/\r$/, ''));
+  const text = line.replace(/\r$/, '');
+  const match = SECTION_HEADING_PATTERN.exec(text);
   if (!match) return null;
+  // A second tag anywhere after the leading one makes the heading ambiguous: treat it as untagged
+  // so the parser agrees with the checker, which rejects such headings.
+  if (match[3] !== undefined && DUPLICATE_TAG_PATTERN.test(match[4])) {
+    const bare = text.slice(text.indexOf('}') + 1);
+    return {
+      id: match[2],
+      depth: match[1].length,
+      title: bare.trim(),
+      tag: null,
+      lineIndex: 0,
+    };
+  }
   return {
     id: match[2],
     depth: match[1].length,
     title: match[4].trim(),
-    tagged: match[3] !== undefined,
+    tag: match[3] === undefined ? null : match[3] === 'IMPORTANT' ? 'important' : 'proforma',
     lineIndex: 0,
   };
 }
@@ -538,6 +557,19 @@ export function collectSectionHeadings(lines: string[]): SectionHeading[] {
   return headings;
 }
 
+/** True when id or any numeric ancestor is in the set; §PYX.7 is not a child of §PY.7 */
+function hasTaggedSelfOrAncestor(
+  id: SectionNotation,
+  tagged: ReadonlySet<SectionNotation>
+): boolean {
+  let current = id;
+  while (current.includes('.')) {
+    if (tagged.has(current)) return true;
+    current = current.substring(0, current.lastIndexOf('.'));
+  }
+  return false;
+}
+
 /**
  * Check whether a section or any numeric ancestor is tagged important
  *
@@ -552,10 +584,58 @@ export function isImportantSection(
   id: SectionNotation,
   tagged: ReadonlySet<SectionNotation>
 ): boolean {
-  let current = id;
-  while (current.includes('.')) {
-    if (tagged.has(current)) return true;
-    current = current.substring(0, current.lastIndexOf('.'));
+  return hasTaggedSelfOrAncestor(id, tagged);
+}
+
+/**
+ * Check whether a section or any numeric ancestor is tagged proforma
+ *
+ * Proforma takes precedence over important: callers test this first, so a
+ * proforma section is never treated as important at any depth.
+ *
+ * @param id - Section to test
+ * @param proforma - Set of proforma-tagged section ids
+ * @returns True when id or an ancestor is tagged proforma
+ */
+export function isProformaSection(
+  id: SectionNotation,
+  proforma: ReadonlySet<SectionNotation>
+): boolean {
+  return hasTaggedSelfOrAncestor(id, proforma);
+}
+
+/**
+ * Remove proforma sections from policy content
+ *
+ * Each § heading (outside code fences) that is proforma is removed together
+ * with its span: the heading line up to the next heading that is not its
+ * descendant, or the end of content. All other lines are kept unchanged.
+ * Returns '' when the content's own (first) heading is proforma.
+ *
+ * @param content - Section text, possibly containing nested headings
+ * @param proforma - Set of proforma-tagged section ids
+ * @returns Content without proforma spans
+ */
+export function stripProformaSections(
+  content: string,
+  proforma: ReadonlySet<SectionNotation>
+): string {
+  if (proforma.size === 0) return content;
+  const lines = content.split('\n');
+  const headings = collectSectionHeadings(lines);
+  if (headings.length > 0 && isProformaSection(headings[0].id, proforma)) return '';
+
+  const removed = Array.from({ length: lines.length }, () => false);
+  let changed = false;
+  for (const heading of headings) {
+    if (!isProformaSection(heading.id, proforma)) continue;
+    const next = headings.find(
+      (other) => other.lineIndex > heading.lineIndex && !other.id.startsWith(`${heading.id}.`)
+    );
+    const end = next ? next.lineIndex : lines.length;
+    for (let i = heading.lineIndex; i < end; i++) removed[i] = true;
+    changed = true;
   }
-  return false;
+  if (!changed) return content;
+  return lines.filter((_, i) => !removed[i]).join('\n');
 }

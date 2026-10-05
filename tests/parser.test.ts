@@ -15,7 +15,10 @@ import {
   IMPORTANT_TAG,
   parseSectionHeading,
   collectSectionHeadings,
+  PROFORMA_TAG,
   isImportantSection,
+  isProformaSection,
+  stripProformaSections,
   extractSectionFromLines,
 } from '../src/parser';
 import { SectionNotation } from '../src/types';
@@ -851,7 +854,7 @@ Text after with §META.2
         id: '§PY.7',
         depth: 2,
         title: 'Error Handling',
-        tagged: true,
+        tag: 'important',
         lineIndex: 0,
       });
     });
@@ -859,15 +862,19 @@ Text after with §META.2
     it('should detect the important tag on a CRLF line', () => {
       const heading = parseSectionHeading(`## {§PY.7} ${IMPORTANT_TAG} Error Handling\r`);
 
-      expect(heading).toMatchObject({ id: '§PY.7', title: 'Error Handling', tagged: true });
+      expect(heading).toMatchObject({
+        id: '§PY.7',
+        title: 'Error Handling',
+        tag: 'important',
+      });
     });
 
     it('should collect headings from CRLF content', () => {
       const lines = '## {§PY.1} A\r\n### {§PY.1.1} [IMPORTANT] B\r\n'.split('\n');
 
-      expect(collectSectionHeadings(lines).map((h) => [h.id, h.title, h.tagged])).toEqual([
-        ['§PY.1', 'A', false],
-        ['§PY.1.1', 'B', true],
+      expect(collectSectionHeadings(lines).map((h) => [h.id, h.title, h.tag])).toEqual([
+        ['§PY.1', 'A', null],
+        ['§PY.1.1', 'B', 'important'],
       ]);
     });
 
@@ -878,21 +885,21 @@ Text after with §META.2
         id: '§PY.7.2',
         depth: 3,
         title: '',
-        tagged: false,
+        tag: null,
       });
     });
 
     it('should treat a lowercase tag as untagged', () => {
       const heading = parseSectionHeading('## {§PY.7} [important] Title');
 
-      expect(heading?.tagged).toBe(false);
+      expect(heading?.tag).toBeNull();
       expect(heading?.title).toBe('[important] Title');
     });
 
     it('should leave a tag without a separating space in the title', () => {
       const heading = parseSectionHeading('## {§PY.7}[IMPORTANT] Title');
 
-      expect(heading?.tagged).toBe(false);
+      expect(heading?.tag).toBeNull();
       expect(heading?.title).toBe('[IMPORTANT] Title');
     });
 
@@ -911,9 +918,9 @@ Text after with §META.2
 
       const headings = collectSectionHeadings(lines);
 
-      expect(headings.map((h) => [h.id, h.lineIndex, h.tagged])).toEqual([
-        ['§PY.1', 0, false],
-        ['§PY.1.1', 4, true],
+      expect(headings.map((h) => [h.id, h.lineIndex, h.tag])).toEqual([
+        ['§PY.1', 0, null],
+        ['§PY.1.1', 4, 'important'],
       ]);
     });
 
@@ -959,6 +966,132 @@ Text after with §META.2
       expect(subTagged).toEqual(subPlain);
       expect(extractSectionFromLines(tagged, 'PY', '7').split('\n')).toHaveLength(4);
       expect(extractSectionFromLines(tagged, 'PY', '7.1').split('\n')).toHaveLength(2);
+    });
+
+    it('should set the proforma tag with a clean title', () => {
+      expect(parseSectionHeading(`## {§PY.7} ${PROFORMA_TAG} Template`)).toEqual({
+        id: '§PY.7',
+        depth: 2,
+        title: 'Template',
+        tag: 'proforma',
+        lineIndex: 0,
+      });
+    });
+
+    it('should detect the proforma tag on CRLF and no-title lines', () => {
+      expect(parseSectionHeading('## {§PY.7} [PROFORMA] Template\r')).toMatchObject({
+        title: 'Template',
+        tag: 'proforma',
+      });
+      expect(parseSectionHeading('### {§PY.7.1} [PROFORMA]')).toMatchObject({
+        title: '',
+        tag: 'proforma',
+      });
+    });
+
+    it('should treat lowercase or unspaced proforma tags as untagged', () => {
+      const lower = parseSectionHeading('## {§PY.7} [proforma] T');
+      const tight = parseSectionHeading('## {§PY.7}[PROFORMA] T');
+
+      expect(lower?.tag).toBeNull();
+      expect(tight?.tag).toBeNull();
+      expect(tight?.title).toBe('[PROFORMA] T');
+    });
+
+    it.each([
+      '[IMPORTANT] [PROFORMA] T',
+      '[PROFORMA] [IMPORTANT] T',
+      '[PROFORMA] Title [IMPORTANT]',
+      '[PROFORMA] Title [PROFORMA]',
+      '[IMPORTANT] Title [proforma]',
+      '[IMPORTANT] [IMPORTANT] T',
+      '[IMPORTANT] Title [important]',
+    ])('should parse a double-tagged heading as untagged: %s', (rest) => {
+      const heading = parseSectionHeading(`## {§PY.7} ${rest}`);
+
+      expect(heading).toMatchObject({ id: '§PY.7', tag: null, title: rest });
+    });
+
+    it('should report proforma tags from collectSectionHeadings', () => {
+      const lines = ['## {§PY.1} A', '### {§PY.1.1} [PROFORMA] B'];
+
+      expect(collectSectionHeadings(lines).map((h) => h.tag)).toEqual([null, 'proforma']);
+    });
+
+    it('should inherit proforma by numeric ancestry', () => {
+      const proforma = new Set<SectionNotation>(['§PY.7']);
+
+      expect(isProformaSection('§PY.7.2.1', proforma)).toBe(true);
+      expect(isProformaSection('§PY.8', proforma)).toBe(false);
+      expect(isProformaSection('§PYX.7', proforma)).toBe(false);
+    });
+
+    it('should inherit proforma from a mid-level tag but not from a tagged child', () => {
+      const proforma = new Set<SectionNotation>(['§PY.7.2']);
+
+      expect(isProformaSection('§PY.7.2.1', proforma)).toBe(true);
+      expect(isProformaSection('§PY.7', proforma)).toBe(false);
+    });
+
+    it('should extract the same span for proforma and untagged headings', () => {
+      const plain = ['## {§PY.7} T', 'body', '### {§PY.7.1} Sub', 'sub', '## {§PY.8} Next'];
+      const proforma = plain.map((l) => l.replace('} ', '} [PROFORMA] '));
+
+      const strip = (l: string[]): string[] => l.map((x) => x.replace(' [PROFORMA]', ''));
+      expect(strip(extractSectionFromLines(proforma, 'PY', '7').split('\n'))).toEqual(
+        extractSectionFromLines(plain, 'PY', '7').split('\n')
+      );
+      expect(extractSectionFromLines(proforma, 'PY', '7.1').split('\n')).toHaveLength(2);
+    });
+
+    it('should strip a middle heading with its descendant and keep the next sibling', () => {
+      const content = [
+        '## {§PY.1} A',
+        'a body',
+        '### {§PY.1.1} [PROFORMA] B',
+        'b body',
+        '#### {§PY.1.1.1} C',
+        'c body',
+        '### {§PY.1.2} D',
+        'd body',
+      ].join('\n');
+
+      expect(stripProformaSections(content, new Set(['§PY.1.1']))).toBe(
+        ['## {§PY.1} A', 'a body', '### {§PY.1.2} D', 'd body'].join('\n')
+      );
+    });
+
+    it('should ignore proforma headings inside fenced code blocks', () => {
+      const content = ['## {§PY.1} A', '```', '### {§PY.1.1} [PROFORMA] X', 'x', '```'].join('\n');
+
+      expect(stripProformaSections(content, new Set(['§PY.1.1']))).toBe(content);
+    });
+
+    it('should return input unchanged for an empty set', () => {
+      const content = '## {§PY.1} A\nbody\n';
+
+      expect(stripProformaSections(content, new Set())).toBe(content);
+    });
+
+    it('should return an empty string when the entry itself is proforma', () => {
+      const content = '## {§PY.1} [PROFORMA] A\nbody\n### {§PY.1.1} B\nb';
+
+      expect(stripProformaSections(content, new Set(['§PY.1']))).toBe('');
+    });
+
+    it('should remove a proforma child of an important parent', () => {
+      const content = [
+        '## {§PY.1} [IMPORTANT] A',
+        'a',
+        '### {§PY.1.1} [PROFORMA] B',
+        'b',
+        '### {§PY.1.2} C',
+        'c',
+      ].join('\n');
+
+      expect(stripProformaSections(content, new Set(['§PY.1.1']))).toBe(
+        ['## {§PY.1} [IMPORTANT] A', 'a', '### {§PY.1.2} C', 'c'].join('\n')
+      );
     });
   });
 });

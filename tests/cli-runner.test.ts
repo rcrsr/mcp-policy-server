@@ -161,6 +161,39 @@ describe('cli-runner', () => {
     });
   });
 
+  describe('help text for proforma', () => {
+    it('documents heading tags in check help', () => {
+      expect(SUBCOMMAND_USAGE.check).toContain('[PROFORMA]');
+      expect(SUBCOMMAND_USAGE.check).toContain(
+        '[IMPORTANT] heading under a [PROFORMA] ancestor (TAG_CONFLICT'
+      );
+    });
+
+    it('documents the proforma field in list-sections help', () => {
+      expect(SUBCOMMAND_USAGE['list-sections']).toContain('proforma');
+    });
+  });
+
+  describe('fetch-policies proforma', () => {
+    it('still returns proforma section text', () => {
+      fs.writeFileSync(
+        path.join(tmpDir, 'policy-pf.md'),
+        '## {§PF.1} [PROFORMA] Form\nFORM-BODY\n{§END}\n'
+      );
+      fs.writeFileSync(path.join(tmpDir, 'policies.json'), JSON.stringify({ files: ['./*.md'] }));
+      const result = runCli([
+        'fetch-policies',
+        '§PF.1',
+        '--config',
+        path.join(tmpDir, 'policies.json'),
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('[PROFORMA]');
+      expect(result.stdout).toContain('FORM-BODY');
+    });
+  });
+
   describe('fetch-policies', () => {
     it('requires a file argument', () => {
       const result = runCli(['fetch-policies']);
@@ -440,6 +473,27 @@ describe('cli-runner', () => {
         true,
         true,
         false,
+      ]);
+    });
+
+    it('reports the proforma field and never marks a proforma section important', () => {
+      fs.writeFileSync(
+        path.join(tmpDir, 'policy-pf.md'),
+        '## {§PF.1} [IMPORTANT] Tagged\nbody\n### {§PF.1.1} [PROFORMA] Form\nform\n## {§PF.2} Plain\nbody\n'
+      );
+      fs.writeFileSync(path.join(tmpDir, 'policies.json'), JSON.stringify({ files: ['./*.md'] }));
+      const result = runCli(['list-sections', '--config', path.join(tmpDir, 'policies.json')]);
+
+      const parsed = JSON.parse(result.stdout);
+      expect(
+        parsed.details.map((d: { proforma: boolean; important: boolean }) => [
+          d.important,
+          d.proforma,
+        ])
+      ).toEqual([
+        [true, false],
+        [false, true],
+        [false, false],
       ]);
     });
 

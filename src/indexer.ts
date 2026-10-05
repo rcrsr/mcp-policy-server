@@ -12,6 +12,7 @@ import {
   IndexState,
   SectionDetail,
   SectionDetailsResult,
+  TaggedSections,
 } from './types.js';
 import {
   collectSectionHeadings,
@@ -20,6 +21,7 @@ import {
   extractSectionFromLines,
   findEmbeddedReferences,
   isImportantSection,
+  isProformaSection,
 } from './parser.js';
 
 /**
@@ -545,13 +547,15 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
 
   // Read each file exactly once; a failed read is kept so it is reported in file order below
   const readResults = new Map<string, { lines: string[] } | { reason: string }>();
-  const taggedIds = new Set<SectionNotation>();
+  const importantIds = new Set<SectionNotation>();
+  const proformaIds = new Set<SectionNotation>();
   for (const filePath of sectionsByFile.keys()) {
     try {
       const lines = fs.readFileSync(filePath, 'utf8').split('\n');
       readResults.set(filePath, { lines });
       for (const heading of collectSectionHeadings(lines)) {
-        if (heading.tagged) taggedIds.add(heading.id);
+        if (heading.tag === 'important') importantIds.add(heading.id);
+        if (heading.tag === 'proforma') proformaIds.add(heading.id);
       }
     } catch (error) {
       const reason = `Failed to read ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
@@ -581,13 +585,15 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
           .filter((r) => r !== id)
           .sort();
 
+        const proforma = isProformaSection(id, proformaIds);
         details.push({
           id,
           prefix,
           file: path.relative(baseDir, filePath),
           byteLength,
           refs,
-          important: isImportantSection(id, taggedIds),
+          important: !proforma && isImportantSection(id, importantIds),
+          proforma,
         });
       } catch (error) {
         const reason = `Failed to extract section from ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
@@ -604,21 +610,19 @@ export function buildSectionDetails(index: SectionIndex, baseDir: string): Secti
 }
 
 /**
- * Find the sections tagged important in the files holding the given ids
+ * Find the sections tagged important or proforma in the files holding the given ids
  *
  * Reads each distinct file (looked up in index.sectionMap) that holds an id or
- * one of its numeric ancestors, and returns every tagged heading found there.
- * Pair with isImportantSection to test a section against its ancestors.
+ * one of its numeric ancestors, and returns every tagged heading found there, split by tag.
+ * Pair with isImportantSection and isProformaSection to test a section against
+ * its ancestors.
  *
  * @param ids - Section ids to inspect
  * @param index - Section index
- * @returns Ids of tagged headings in those files
+ * @returns Ids of important and proforma headings in those files
  * @throws {Error} When a file cannot be read
  */
-export function findTaggedSections(
-  ids: SectionNotation[],
-  index: SectionIndex
-): Set<SectionNotation> {
+export function findTaggedSections(ids: SectionNotation[], index: SectionIndex): TaggedSections {
   const files = new Set<string>();
   for (const id of ids) {
     let current: string = id;
@@ -629,7 +633,7 @@ export function findTaggedSections(
     }
   }
 
-  const tagged = new Set<SectionNotation>();
+  const tagged: TaggedSections = { important: new Set(), proforma: new Set() };
   for (const file of files) {
     let content: string;
     try {
@@ -640,7 +644,7 @@ export function findTaggedSections(
       );
     }
     for (const heading of collectSectionHeadings(content.split('\n'))) {
-      if (heading.tagged) tagged.add(heading.id);
+      if (heading.tag) tagged[heading.tag].add(heading.id);
     }
   }
   return tagged;

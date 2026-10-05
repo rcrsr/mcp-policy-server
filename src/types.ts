@@ -50,18 +50,29 @@ export interface ParsedSection {
  */
 export type SectionNotation = string;
 
+/** Heading tag kinds; a heading carries at most one */
+export type SectionTag = 'important' | 'proforma';
+
+/**
+ * Ids of headings carrying each tag, as found in the source files
+ */
+export interface TaggedSections {
+  important: Set<SectionNotation>;
+  proforma: Set<SectionNotation>;
+}
+
 /**
  * A parsed `##`/`###` section heading line
  *
- * `depth` is the number of leading `#` characters, `tagged` is true when the
- * heading carries the exact `[IMPORTANT]` tag, `lineIndex` is the zero-based
- * line position in the source file.
+ * `depth` is the number of leading `#` characters, `tag` is the exact
+ * `[IMPORTANT]` or `[PROFORMA]` tag the heading carries (null when untagged),
+ * `lineIndex` is the zero-based line position in the source file.
  */
 export interface SectionHeading {
   id: SectionNotation;
   depth: number;
   title: string;
-  tagged: boolean;
+  tag: SectionTag | null;
   lineIndex: number;
 }
 
@@ -132,6 +143,7 @@ export interface SectionDetail {
   byteLength: number;
   refs: SectionNotation[];
   important: boolean;
+  proforma: boolean;
 }
 
 /**

@@ -103,6 +103,11 @@ describe.skipIf(!fs.existsSync(path.join(DIST, 'cli.js')))('built binaries', () 
       expect(stderr).toContain('Usage: policy-hook [options]');
     });
 
+    it('mentions [PROFORMA] in --help output', () => {
+      const { stderr } = run('hook.js', ['--help']);
+      expect(stderr).toContain('[PROFORMA]');
+    });
+
     it('rejects unknown options and missing option values', () => {
       expect(run('hook.js', ['--bogus']).status).toBe(1);
       expect(run('hook.js', ['--config']).stderr).toContain('--config requires a path argument');

@@ -21,10 +21,11 @@ import {
   pluginNamespace,
   resolveAgentsDirs,
   runHook,
+  stripProformaInventory,
 } from '../src/hook-runner.js';
 import { buildSectionIndex, findTaggedSections } from '../src/indexer.js';
 import { resolvePolicyInventory } from '../src/operations.js';
-import { SectionNotation } from '../src/types.js';
+import { InventorySection, SectionNotation } from '../src/types.js';
 
 const mocks = vi.hoisted(() => ({ failTagged: false }));
 vi.mock('../src/indexer.js', async (importOriginal) => {
@@ -772,6 +773,89 @@ Plain body. More words.
       expect(text.split('CHILD-BODY-MARKER').length - 1).toBe(1);
       expect(text.split('GRANDCHILD-L3-MARKER').length - 1).toBe(1);
     });
+
+    describe('proforma sections', () => {
+      const PROFORMA_POLICY = [
+        '## {§P.1} [IMPORTANT] Core',
+        'Core rule applies always. CORE-BODY.',
+        '',
+        '### {§P.1.1} [PROFORMA] Template',
+        'Template sentence. PROFORMA-CHILD-BODY.',
+        '',
+        '### {§P.1.2} Sibling',
+        'Sibling sentence. SIBLING-BODY.',
+        '',
+        '## {§P.2} [PROFORMA] Boilerplate',
+        'Boilerplate sentence. PROFORMA-TOP-BODY.',
+        '',
+        '## {§P.3} Plain',
+        'Plain sentence. PLAIN-BODY.',
+        '{§END}',
+        '',
+      ].join('\n');
+
+      function run(refs: string, mode: 'full' | 'digest'): ReturnType<typeof runHook> {
+        const { agentsDir } = makeProject(tmpDir);
+        fs.writeFileSync(path.join(agentsDir, 'pbot.md'), refs);
+        const policyFile = path.join(tmpDir, 'policy-p.md');
+        fs.writeFileSync(policyFile, PROFORMA_POLICY);
+        return runHook(hookInput('pbot', 'Original'), {
+          env,
+          log,
+          configPath: policyFile,
+          mode,
+        });
+      }
+
+      it('omits proforma headings and bodies in full mode and keeps sibling text', () => {
+        const text = JSON.stringify(run('Follow §P.1, §P.2 and §P.3.', 'full'));
+
+        expect(text).not.toContain('[PROFORMA]');
+        expect(text).not.toContain('PROFORMA-CHILD-BODY');
+        expect(text).not.toContain('PROFORMA-TOP-BODY');
+        expect(text).toContain('SIBLING-BODY');
+        expect(text).toContain('CORE-BODY');
+        expect(text).toContain('PLAIN-BODY');
+        expect(logs.some((l) => l.startsWith('proforma: 1 entries dropped'))).toBe(true);
+      });
+
+      it('lists no digest line for proforma ids and excludes them from the full block and counts', () => {
+        const output = run('Follow §P.1, §P.2 and §P.3.', 'digest');
+        const text = JSON.stringify(output);
+
+        expect(text).not.toContain('§P.1.1');
+        expect(text).not.toContain('§P.2');
+        expect(text).not.toContain('PROFORMA-');
+        expect(text).toContain('SIBLING-BODY');
+        expect(text).toContain('§P.3 Plain');
+        expect(logs.some((l) => /^digest: \d+ chars \(3 summarized, 1 full\)$/.test(l))).toBe(true);
+      });
+
+      it('allows without injection when every resolved section is proforma', () => {
+        const output = run('Follow §P.2.', 'full');
+
+        expect(output).toEqual({ permissionDecision: 'allow' });
+        expect(logs.some((l) => l.startsWith('EXIT: all resolved sections are proforma'))).toBe(
+          true
+        );
+      });
+
+      it.each(['full', 'digest'] as const)(
+        'denies in %s mode when the tag lookup fails',
+        (mode) => {
+          mocks.failTagged = true;
+          let output;
+          try {
+            output = run('Follow §P.1.', mode);
+          } finally {
+            mocks.failTagged = false;
+          }
+
+          expect(JSON.stringify(output)).toContain('Policy resolution failed');
+          expect(logs.some((l) => l.startsWith('BLOCK:'))).toBe(true);
+        }
+      );
+    });
   });
 
   describe('runHook policy-mode frontmatter', () => {
@@ -1035,7 +1119,7 @@ Third body.
       inventory.map((section) => section.id),
       index
     );
-    const digest = buildPolicyDigest(inventory, tagged, {
+    const digest = buildPolicyDigest(inventory, tagged.important, {
       ...DEFAULT_DIGEST_OPTIONS,
       ...options,
     });
@@ -1202,8 +1286,9 @@ Third body.
     });
 
     const tagged = findTaggedSections(['§D.1.1' as SectionNotation], index);
-    expect([...tagged].sort()).toEqual(['§D.1', '§D.2.1']);
-    expect(findTaggedSections([], index).size).toBe(0);
+    expect([...tagged.important].sort()).toEqual(['§D.1', '§D.2.1']);
+    expect([...tagged.proforma]).toEqual([]);
+    expect(findTaggedSections([], index).important.size).toBe(0);
   });
 
   it('honours options.depth for untagged nested headings', () => {
@@ -1358,5 +1443,51 @@ Third body.
   it('returns empty text for an empty inventory', () => {
     const tagged = new Set<SectionNotation>();
     expect(buildPolicyDigest([], tagged, DEFAULT_DIGEST_OPTIONS).text).toBe('');
+  });
+});
+
+describe('stripProformaInventory', () => {
+  const entry = (id: string, content: string): InventorySection =>
+    ({ id, content }) as InventorySection;
+
+  it('returns an equal inventory when there are no proforma tags', () => {
+    const input = [entry('§S.1', '## {§S.1} A\nbody'), entry('§S.2', '## {§S.2} B\nbody')];
+
+    expect(stripProformaInventory(input, new Set())).toEqual(input);
+  });
+
+  it('drops an entry whose id has a proforma ancestor outside its content', () => {
+    const input = [entry('§S.1.1', '### {§S.1.1} Child\nbody'), entry('§S.2', '## {§S.2} B\nb')];
+
+    const out = stripProformaInventory(input, new Set(['§S.1']));
+
+    expect(out.map((e) => e.id)).toEqual(['§S.2']);
+  });
+
+  it('strips nested proforma spans and keeps the surrounding text', () => {
+    const input = [
+      entry('§S.1', '## {§S.1} A\nkeep\n### {§S.1.1} [PROFORMA] T\ndrop\n### {§S.1.2} U\nkeep2'),
+    ];
+
+    const out = stripProformaInventory(input, new Set(['§S.1.1']));
+
+    expect(out[0].content).toBe('## {§S.1} A\nkeep\n### {§S.1.2} U\nkeep2');
+  });
+
+  it('keeps a proforma-looking heading inside a code fence', () => {
+    const content = '## {§S.1} A\n```\n### {§S.1.1} [PROFORMA] T\nfenced\n```\nafter';
+
+    const out = stripProformaInventory([entry('§S.1', content)], new Set(['§S.1.1']));
+
+    expect(out[0].content).toBe(content);
+  });
+
+  it('preserves CRLF line endings in kept text', () => {
+    const content =
+      '## {§S.1} A\r\nkeep\r\n### {§S.1.1} [PROFORMA] T\r\ndrop\r\n### {§S.1.2} U\r\nkeep2';
+
+    const out = stripProformaInventory([entry('§S.1', content)], new Set(['§S.1.1']));
+
+    expect(out[0].content).toBe('## {§S.1} A\r\nkeep\r\n### {§S.1.2} U\r\nkeep2');
   });
 });
