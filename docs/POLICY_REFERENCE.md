@@ -77,6 +77,13 @@ Mark a section as proforma (boilerplate the hook never injects) by adding exactl
 ## {§PREFIX.2} [PROFORMA] Title
 ```
 
+Use `[PROFORMA]` for text a person needs but an agent does not:
+
+- Rules a mechanical check already enforces, such as a lint rule, `policy-cli check`, or a CI gate. The prose documents the rule and the check backs it up, so injecting it costs agent context without changing behaviour.
+- Templates, worked examples, and background a reviewer reads once.
+
+Do not tag a rule that only an agent's judgment can follow. The hook never shows proforma text to the agent.
+
 - Grammar matches `[IMPORTANT]`: uppercase, one space after the brace, optional title after it. A heading carries at most one tag; `[IMPORTANT]` and `[PROFORMA]` are mutually exclusive.
 - A proforma section covers its whole subtree: every nested subsection (`§PREFIX.2.1`, `§PREFIX.2.1.1`, ...) is proforma. A tag on a subsection affects only that subsection and its descendants.
 - Proforma overrides `[IMPORTANT]` at any depth. There is no "nearest tag wins" and an important child of a proforma section is not promoted. `policy-cli check` reports an `[IMPORTANT]` heading under a `[PROFORMA]` ancestor as a `TAG_CONFLICT` error, since the important tag would have no effect.

@@ -227,7 +227,7 @@ Required policies: §DESIGN, §API
 | `digest` | Inject one line per non-proforma section, plus the full text of `[IMPORTANT]` sections |
 | `digest-minimal` | Same as `digest`, with each line limited to the section id and title |
 
-- Sections tagged `[PROFORMA]` (and their nested subsections) are skipped in every hook mode; `fetch-policies` still returns them.
+- Sections tagged `[PROFORMA]` (and their nested subsections) are skipped in every hook mode; `fetch-policies` still returns them. Use it for rules a mechanical check already enforces, and for templates; see [Proforma Tag](docs/POLICY_REFERENCE.md#proforma-tag).
 - The agent's `policy-mode` overrides the hook's `--mode` and `--digest-minimal` flags. Without the key, the flags apply, then `full`.
 - `--digest-depth`, `--digest-line-chars`, and `--fetch-instructions` still apply from the hook command.
 - An invalid value denies the Task call with a reason naming the agent file and the value.
