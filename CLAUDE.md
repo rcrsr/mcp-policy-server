@@ -19,6 +19,8 @@ npm run fix:format && npm run fix:lint   # auto-fix format and lint
 
 `engines.node` and the `.github/workflows/ci.yml` node matrix change together; read the version from `package.json`, never hardcode it.
 
+`package.json` `version` is the single source (`SERVER_VERSION` reads it); bump with `npm version <v> --no-git-tag-version`, never hand-edit. See `conduct/policies/policy-domain-library.md` §LIB.5.
+
 ## Architecture
 
 ```
@@ -46,7 +48,13 @@ point belongs in `operations.ts`.
 
 Diagnostics go to `console.error` only; stdout is reserved for JSON-RPC frames, hook JSON, and CLI results.
 
+CLI exits `0` on success (including `--help` and no references found) and `1` on any failure. See `conduct/policies/policy-domain-cli.md` §CLI.4.
+
+The hook fails open (allow) on hook, config, or index faults. It denies only when referenced policies fail to resolve, digest rendering fails, or `policy-mode` is unrecognised. See `conduct/policies/policy-domain-cli.md` §CLI.8.
+
 Relative imports use `.js`; Node builtins are `import * as fs from 'fs'` (no `node:`).
+
+Review-enforced TypeScript conventions: UPPER_SNAKE_CASE module constants, `??` over `||`, sync `fs.*Sync` I/O, builtins then third-party then local imports. See `conduct/policies/policy-artifact-typescript.md` §TS.1, §TS.2, §TS.6, §TS.7.
 
 Tool handlers throw `Error` (never `isError`); validate args with hand-written `is*Args` guards, no zod.
 
@@ -64,6 +72,7 @@ Tool handlers throw `Error` (never `isError`); validate args with hand-written `
 - Parent-child deduplication: §DOC.4 supersedes §DOC.4.1
 - Response chunking at section boundaries (10000 token limit, MCP `fetch_policies` only)
 - File watching and lazy index rebuild apply to the MCP server only; hook and CLI rebuild the index per invocation
-- `[IMPORTANT]` after a heading's `}` marks a section and its nested subsections important; hook `--mode digest` lists every section as a one-line digest and injects full text only for important ones (full mode is the default)
+- `[IMPORTANT]` after a heading's `}` marks a section and its nested subsections important; hook `--mode digest` lists sections down to `--digest-depth` as one-line digests and injects full text only for important ones (full mode is the default)
 - Hook injection puts `<policies>` before `<task>` so the policy prefix stays cacheable.
 - `llms.txt` at the root mirrors the tool surface; update it when tools, subcommands, or notation change
+- Adding a subcommand, tool, or binary follows a multi-file checklist: `conduct/policies/policy-domain-cli.md` §CLI.7, `conduct/policies/policy-domain-mcp-server.md` §MCP.8, `conduct/policies/policy-domain-library.md` §LIB.7
